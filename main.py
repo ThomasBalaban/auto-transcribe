@@ -80,6 +80,19 @@ class DualSubtitleApp:
         self.log_box = ctk.CTkTextbox(frame, height=150, width=600)
         self.log_box.grid(row=7, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
 
+    def get_unique_output_path(self, base_path):
+        """Generate a unique output filename by adding incremental counters"""
+        if not os.path.exists(base_path):
+            return base_path
+            
+        # If file already exists, add counter
+        filename, ext = os.path.splitext(base_path)
+        counter = 1
+        while os.path.exists(f"{filename}-{counter}{ext}"):
+            counter += 1
+            
+        return f"{filename}-{counter}{ext}"
+
     def browse_file(self):
         """Browse for input file"""
         file_path = filedialog.askopenfilename()
@@ -98,15 +111,21 @@ class DualSubtitleApp:
             
             output_path = os.path.join(output_dir, output_filename)
             
+            # Check if output file exists and create unique name if needed
+            unique_output_path = self.get_unique_output_path(output_path)
+            
             self.output_entry.delete(0, ctk.END)
-            self.output_entry.insert(0, output_path)
+            self.output_entry.insert(0, unique_output_path)
 
     def browse_output(self):
         """Browse for output file location"""
         output_path = filedialog.asksaveasfilename(defaultextension=".mp4", filetypes=[("MP4 files", "*.mp4")])
         if output_path:
+            # Check if output file exists and create unique name if needed
+            unique_output_path = self.get_unique_output_path(output_path)
+            
             self.output_entry.delete(0, ctk.END)
-            self.output_entry.insert(0, output_path)
+            self.output_entry.insert(0, unique_output_path)
 
     def start_complete_process_thread(self):
         """Start the complete process in a separate thread"""
