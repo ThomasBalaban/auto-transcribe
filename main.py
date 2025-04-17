@@ -85,6 +85,7 @@ def complete_process():
         return
 
     log("Starting complete process: transcription and subtitle embedding...")
+    log("Using audio Track 2 (fixed)")
     
     # Create output directory if it doesn't exist
     output_dir = os.path.dirname(output_file)
@@ -103,8 +104,13 @@ def complete_process():
         log(f"Will extract audio to: {audio_path}")
         
         if input_file.endswith(('.mp4', '.mkv', '.avi')):
-            log("Converting video to audio...")
-            convert_to_audio(input_file, audio_path)
+            log("Converting video to audio (using Track 2)...")
+            try:
+                convert_to_audio(input_file, audio_path)
+            except Exception as e:
+                log(f"ERROR converting video to audio: {e}")
+                messagebox.showerror("Error", "Failed to extract audio. The file may not contain the expected audio track.")
+                return
         else:
             audio_path = input_file
 
@@ -218,7 +224,7 @@ def start_transcription():
     with tempfile.TemporaryDirectory() as temp_dir:
         audio_path = os.path.join(temp_dir, "temp_audio.wav")
         if input_file.endswith(('.mp4', '.mkv', '.avi')):
-            log("Converting video to audio...")
+            log("Converting video to audio (using Track 2)...")
             convert_to_audio(input_file, audio_path)
         else:
             audio_path = input_file
@@ -266,7 +272,7 @@ ctk.set_appearance_mode("dark")  # Modes: "system" (default), "light", "dark"
 ctk.set_default_color_theme("blue")  # Themes: "blue" (default), "green", "dark-blue"
 
 root = ctk.CTk()
-root.title("SimpleAutoSubs - Word-by-Word Subtitles")
+root.title("SimpleAutoSubs - Track 2 Subtitler")
 
 frame = ctk.CTkFrame(root)
 frame.grid(row=0, column=0, padx=20, pady=20)
@@ -281,12 +287,10 @@ output_entry = ctk.CTkEntry(frame, width=400)
 output_entry.grid(row=1, column=1, padx=5, pady=5)
 ctk.CTkButton(frame, text="Browse", command=lambda: browse_output(output_entry)).grid(row=1, column=2, padx=5, pady=5)
 
-# Removed model size and language selection since Vosk uses a fixed local model in English
-
 timecodes_var = ctk.BooleanVar()
 timecodes_var.set(True)  # Default to True for word-by-word subtitles
 ctk.CTkCheckBox(frame, text="Include Timecodes (Recommended for Word-by-Word Subtitles)", 
-                variable=timecodes_var).grid(row=2, column=0, sticky="w", padx=5, pady=5)
+                variable=timecodes_var).grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=5)
 
 # Main process button - one click to do everything
 ctk.CTkButton(frame, text="Transcribe & Embed Subtitles", command=start_complete_process_thread).grid(row=3, column=0, columnspan=3, pady=10)
@@ -295,13 +299,17 @@ transcription_textbox = ctk.CTkTextbox(frame, height=200, width=600)
 transcription_textbox.grid(row=4, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
 
 log_box = ctk.CTkTextbox(frame, height=100, width=600)
-log_box.grid(row=6, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+log_box.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
 
 # Status label to display the current model
 model_status = ctk.CTkLabel(frame, text="Using Vosk English Model: vosk-model-en-us-0.42-gigaspeech")
+model_status.grid(row=6, column=0, columnspan=3, pady=5)
+
+track_info = ctk.CTkLabel(frame, text="Using Track 2 for subtitle extraction (fixed)")
+track_info.grid(row=7, column=0, columnspan=3, pady=5)
+
 subtitle_style_info = ctk.CTkLabel(frame, text="Using word-by-word subtitle style (max 3 words per subtitle)")
 subtitle_style_info.grid(row=8, column=0, columnspan=3, pady=5)
-
 
 # Start the log message processing
 root.after(100, process_log_messages)
