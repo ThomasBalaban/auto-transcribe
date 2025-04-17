@@ -59,10 +59,8 @@ class DualSubtitleApp:
         self.output_entry.grid(row=1, column=1, padx=5, pady=5)
         ctk.CTkButton(frame, text="Browse", command=self.browse_output).grid(row=1, column=2, padx=5, pady=5)
         
-        # Options
+        # Hidden but always-on timecode variable
         self.timecodes_var = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(frame, text="Include Timecodes (Recommended for Word-by-Word Subtitles)", 
-                        variable=self.timecodes_var).grid(row=2, column=0, columnspan=2, sticky="w", padx=5, pady=5)
         
         # Main process button
         ctk.CTkButton(frame, text="Transcribe & Embed Subtitles", 
@@ -81,17 +79,6 @@ class DualSubtitleApp:
             row=6, column=0, sticky="w", pady=(10, 0))
         self.log_box = ctk.CTkTextbox(frame, height=150, width=600)
         self.log_box.grid(row=7, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
-        
-        # Info labels
-        self.model_status = ctk.CTkLabel(frame, text="Using Vosk English Model: vosk-model-en-us-0.42-gigaspeech")
-        self.model_status.grid(row=8, column=0, columnspan=3, pady=5)
-        
-        self.track_info = ctk.CTkLabel(frame, text="Track 2 subtitles will appear above Track 3 subtitles")
-        self.track_info.grid(row=9, column=0, columnspan=3, pady=5)
-        
-        self.subtitle_style_info = ctk.CTkLabel(frame, 
-                                         text="Using word-by-word subtitle style (max 3 words per subtitle)")
-        self.subtitle_style_info.grid(row=10, column=0, columnspan=3, pady=5)
 
     def browse_file(self):
         """Browse for input file"""
@@ -99,6 +86,20 @@ class DualSubtitleApp:
         if file_path:
             self.file_entry.delete(0, ctk.END)
             self.file_entry.insert(0, file_path)
+            
+            # Automatically generate output filename
+            input_basename = os.path.basename(file_path)
+            input_name, input_ext = os.path.splitext(input_basename)
+            output_filename = f"{input_name}-as.mp4"
+            
+            # Create output directory if it doesn't exist
+            output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+            os.makedirs(output_dir, exist_ok=True)
+            
+            output_path = os.path.join(output_dir, output_filename)
+            
+            self.output_entry.delete(0, ctk.END)
+            self.output_entry.insert(0, output_path)
 
     def browse_output(self):
         """Browse for output file location"""

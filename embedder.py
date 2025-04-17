@@ -52,25 +52,14 @@ def convert_to_srt(input_text, output_file, video_file, log):
                 end_time = float(timestamp_match.group(2))
                 text = timestamp_match.group(3).strip()
                 
-                # For very short segments (like "ooh"), just display the whole thing
-                if len(text.split()) <= 3:
-                    # Write SRT entry
-                    srt_file.write(f"{subtitle_count}\n")
-                    srt_file.write(f"{format_time(start_time)} --> {format_time(end_time)}\n")
-                    srt_file.write(f"{text}\n\n")
-                    subtitle_count += 1
-                    continue
-                
-                # For longer segments, split into chunks of max 3 words
+                # Split the text into chunks of max 3 words, regardless of text length
                 words = text.split()
                 
                 # Calculate average time per word
-                # Speech is typically 2-3 words per second
                 total_segment_duration = end_time - start_time
                 # Assume actual speaking time is about 70% of the segment duration
-                # (accounts for pauses, breaths, etc.)
                 effective_speaking_time = total_segment_duration * 0.7
-                time_per_word = effective_speaking_time / len(words)
+                time_per_word = effective_speaking_time / max(len(words), 1)  # Avoid division by zero
                 
                 # Process in chunks of maximum 3 words
                 for i in range(0, len(words), 3):
@@ -86,7 +75,7 @@ def convert_to_srt(input_text, output_file, video_file, log):
                     
                     # Calculate start time as a proportion of the whole segment
                     # based on word position
-                    word_position = i / len(words)
+                    word_position = i / max(len(words), 1)  # Avoid division by zero
                     chunk_start = start_time + (total_segment_duration * word_position)
                     chunk_end = min(end_time, chunk_start + chunk_duration)
                     
