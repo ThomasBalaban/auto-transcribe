@@ -94,6 +94,21 @@ def convert_to_audio(input_file, output_file, track_index):
         log(f"Error: {e}")
         raise
 
+def filter_low_confidence_words(words, min_confidence=0.75):
+    """Filter out words with confidence below the threshold"""
+    if not words:
+        return []
+    
+    filtered_words = [word for word in words if word.get('conf', 0) >= min_confidence]
+    return filtered_words
+
+def create_merged_text(filtered_words):
+    """Create a clean text from filtered words"""
+    if not filtered_words:
+        return ""
+    
+    return " ".join(word.get('word', '') for word in filtered_words)
+
 def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func, language, track_name=""):
     try:
         start_time = time.time()
@@ -111,6 +126,7 @@ def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func
         # Create recognizer
         rec = KaldiRecognizer(model, wf.getframerate())
         rec.SetWords(True)  # Enable word timestamps
+        rec.SetPartialWords(True)  # Enable partial results with word timing
 
         transcriptions = []
         results = []
@@ -131,7 +147,10 @@ def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func
         if "result" in final_result:
             results.append(final_result)
             
-        # Process results to create transcriptions
+        # Process results to create transcriptions with confidence filtering
+        min_confidence = 0.75  # Minimum confidence threshold
+        min_segment_duration = 0.5  # Minimum segment duration in seconds
+        
         for result in results:
             if "result" not in result:
                 continue
@@ -140,17 +159,63 @@ def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func
             if not words:
                 continue
                 
-            text = result.get("text", "")
+            # Filter out low-confidence words
+            filtered_words = filter_low_confidence_words(words, min_confidence)
             
-            if include_timecodes and words:
-                start = words[0]["start"]
-                end = words[-1]["end"]
-                transcriptions.append(f"{start:.2f}-{end:.2f}: {text}")
-            else:
-                transcriptions.append(text)
+            # Skip if no words remain after filtering
+            if not filtered_words:
+                continue
+            
+            # Create segments with improved timing
+            segments = []
+            current_segment = []
+            segment_start = filtered_words[0]["start"]
+            
+            for i, word in enumerate(filtered_words):
+                current_segment.append(word)
+                
+                # Decide if we should end the segment here
+                end_segment = False
+                
+                # Check if this is the last word
+                if i == len(filtered_words) - 1:
+                    end_segment = True
+                # Or if there's a natural pause (more than 0.5s between words)
+                elif i < len(filtered_words) - 1 and filtered_words[i+1]["start"] - word["end"] > 0.5:
+                    end_segment = True
+                # Or if the segment is getting too long (more than 3 words)
+                elif len(current_segment) >= 3:
+                    end_segment = True
+                
+                if end_segment and current_segment:
+                    segment_end = current_segment[-1]["end"]
+                    segment_duration = segment_end - segment_start
+                    
+                    # Only include segments with minimum duration
+                    if segment_duration >= min_segment_duration:
+                        segment_text = create_merged_text(current_segment)
+                        
+                        if include_timecodes:
+                            transcriptions.append(f"{segment_start:.2f}-{segment_end:.2f}: {segment_text}")
+                        else:
+                            transcriptions.append(segment_text)
+                    
+                    # Reset for next segment
+                    if i < len(filtered_words) - 1:
+                        current_segment = []
+                        segment_start = filtered_words[i+1]["start"]
         
         transcription_time = time.time() - start_time
-        log_func(f"Transcription completed in {transcription_time:.2f} seconds.")
+        log_func(f"Transcription completed in {transcription_time:.2f} seconds with confidence filtering.")
+        
+        # If no transcriptions were generated after filtering, add a message
+        if not transcriptions:
+            log_func("No high-confidence speech detected after filtering.")
+            if include_timecodes:
+                transcriptions = [f"0.0-5.0: No reliable speech detected in {track_name}"]
+            else:
+                transcriptions = [f"No reliable speech detected in {track_name}"]
+        
         return transcriptions
         
     except Exception as e:

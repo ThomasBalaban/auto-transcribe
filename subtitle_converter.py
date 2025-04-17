@@ -13,9 +13,66 @@ def format_time(seconds):
     return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
 
+def intelligent_phrase_segmentation(text, max_chars_per_line=42):
+    """Break text into natural phrases with a maximum length"""
+    # If text is already short enough, return as is
+    if len(text) <= max_chars_per_line:
+        return [text]
+    
+    # Split by natural breaks first
+    natural_breaks = []
+    for phrase in re.split(r'([,;:.?!])', text):
+        if phrase in ',;:.?!':
+            # Append punctuation to the previous phrase
+            if natural_breaks:
+                natural_breaks[-1] += phrase
+        elif phrase.strip():
+            natural_breaks.append(phrase.strip())
+    
+    # Now ensure each phrase is within the maximum length
+    result = []
+    current_line = ""
+    
+    for phrase in natural_breaks:
+        # If adding this phrase would exceed max length and we already have content
+        if len(current_line) + len(phrase) + 1 > max_chars_per_line and current_line:
+            result.append(current_line)
+            current_line = phrase
+        # If this single phrase is too long, break it by words
+        elif len(phrase) > max_chars_per_line:
+            # Add any existing content first
+            if current_line:
+                result.append(current_line)
+                current_line = ""
+            
+            # Break long phrase by words
+            words = phrase.split()
+            for word in words:
+                if len(current_line) + len(word) + 1 > max_chars_per_line:
+                    result.append(current_line)
+                    current_line = word
+                else:
+                    if current_line:
+                        current_line += " " + word
+                    else:
+                        current_line = word
+        else:
+            # Add the phrase with a space if needed
+            if current_line:
+                current_line += " " + phrase
+            else:
+                current_line = phrase
+    
+    # Don't forget the last line
+    if current_line:
+        result.append(current_line)
+    
+    return result
+
+
 def convert_to_srt(input_text, output_file, video_file, log):
-    """Convert text to SRT format with short phrases (max 3 words) per subtitle"""
-    log(f"Converting transcription to SRT format with short phrases: {output_file}")
+    """Convert text to SRT format with intelligent phrase segmentation"""
+    log(f"Converting transcription to SRT format with improved segmentation: {output_file}")
     video_duration = get_video_duration(video_file, log)
     log(f"Input text for SRT conversion: {input_text[:200]}...")
 
@@ -33,44 +90,64 @@ def convert_to_srt(input_text, output_file, video_file, log):
                 start_time = float(timestamp_match.group(1))
                 end_time = float(timestamp_match.group(2))
                 text = timestamp_match.group(3).strip()
-                words = text.split()
-
-                total_segment_duration = end_time - start_time
-                effective_speaking_time = total_segment_duration * 0.7
-                time_per_word = effective_speaking_time / max(len(words), 1)
-
-                for i in range(0, len(words), 3):
-                    chunk = words[i:i+3]
-                    chunk_size = len(chunk)
-                    chunk_duration = max(0.5, chunk_size * time_per_word)
-                    word_position = i / max(len(words), 1)
-                    chunk_start = start_time + (total_segment_duration * word_position)
-                    chunk_end = min(end_time, chunk_start + chunk_duration)
-
-                    start_formatted = format_time(chunk_start)
-                    end_formatted = format_time(chunk_end)
-
+                
+                # Skip empty segments
+                if not text:
+                    continue
+                
+                # Use improved segmentation for better readability
+                phrases = intelligent_phrase_segmentation(text)
+                
+                # Calculate timing for each phrase
+                segment_duration = end_time - start_time
+                
+                # If we have multiple phrases, distribute them evenly
+                if len(phrases) > 1:
+                    time_per_phrase = segment_duration / len(phrases)
+                    for i, phrase in enumerate(phrases):
+                        phrase_start = start_time + (i * time_per_phrase)
+                        phrase_end = phrase_start + time_per_phrase
+                        
+                        # Write the subtitle entry
+                        start_formatted = format_time(phrase_start)
+                        end_formatted = format_time(phrase_end)
+                        
+                        srt_file.write(f"{subtitle_count}\n")
+                        srt_file.write(f"{start_formatted} --> {end_formatted}\n")
+                        srt_file.write(f"{phrase}\n\n")
+                        subtitle_count += 1
+                else:
+                    # Single phrase, use original timing
+                    start_formatted = format_time(start_time)
+                    end_formatted = format_time(end_time)
+                    
                     srt_file.write(f"{subtitle_count}\n")
                     srt_file.write(f"{start_formatted} --> {end_formatted}\n")
-                    srt_file.write(f"{' '.join(chunk)}\n\n")
+                    srt_file.write(f"{phrases[0]}\n\n")
                     subtitle_count += 1
             else:
-                words = line.split()
-                num_chunks = (len(words) + 2) // 3
-
-                for i in range(0, len(words), 3):
-                    chunk = words[i:i+3]
-                    chunk_index = i // 3
-                    chunk_duration = video_duration / max(num_chunks, 1)
-                    chunk_start = chunk_index * chunk_duration
-                    chunk_end = chunk_start + chunk_duration
-
-                    start_formatted = format_time(chunk_start)
-                    end_formatted = format_time(chunk_end)
-
+                # For lines without timestamps (fallback)
+                # This is a safety measure for lines that don't have proper timestamps
+                text = line.strip()
+                if not text:
+                    continue
+                    
+                phrases = intelligent_phrase_segmentation(text)
+                num_phrases = len(phrases)
+                
+                # Distribute phrases evenly throughout the video duration
+                time_per_phrase = video_duration / max(num_phrases, 1)
+                
+                for i, phrase in enumerate(phrases):
+                    phrase_start = i * time_per_phrase
+                    phrase_end = phrase_start + time_per_phrase
+                    
+                    start_formatted = format_time(phrase_start)
+                    end_formatted = format_time(phrase_end)
+                    
                     srt_file.write(f"{subtitle_count}\n")
                     srt_file.write(f"{start_formatted} --> {end_formatted}\n")
-                    srt_file.write(f"{' '.join(chunk)}\n\n")
+                    srt_file.write(f"{phrase}\n\n")
                     subtitle_count += 1
 
     try:
