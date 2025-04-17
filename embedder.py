@@ -162,8 +162,126 @@ def format_time(seconds):
     seconds = seconds % 60
     return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
+def embed_dual_subtitles(input_video, output_video, track2_srt, track3_srt, log):
+    """Embed two subtitle tracks into a video file with different positions"""
+    log(f"Embedding dual subtitles into video...")
+    
+    # Verify the subtitle files exist and have content
+    if not os.path.exists(track2_srt) or not os.path.exists(track3_srt):
+        missing_files = []
+        if not os.path.exists(track2_srt):
+            missing_files.append(track2_srt)
+        if not os.path.exists(track3_srt):
+            missing_files.append(track3_srt)
+        log(f"ERROR: Subtitle file(s) do not exist: {', '.join(missing_files)}")
+        raise FileNotFoundError(f"Subtitle file(s) not found: {', '.join(missing_files)}")
+    
+    file_size1 = os.path.getsize(track2_srt)
+    file_size2 = os.path.getsize(track3_srt)
+    if file_size1 == 0 or file_size2 == 0:
+        empty_files = []
+        if file_size1 == 0:
+            empty_files.append(track2_srt)
+        if file_size2 == 0:
+            empty_files.append(track3_srt)
+        log(f"ERROR: Subtitle file(s) are empty: {', '.join(empty_files)}")
+        raise ValueError(f"Subtitle file(s) are empty: {', '.join(empty_files)}")
+    
+    # Ensure the output directory exists
+    output_dir = os.path.dirname(output_video)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+        log(f"Created output directory: {output_dir}")
+    
+    # Define subtitle styles for each track
+    # Track 2 (mic) positioned higher in the bottom third
+    track2_style = (
+        "FontName=Arial,FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
+        "BackColour=&H80000000,Bold=1,Italic=0,BorderStyle=3,Outline=1,Shadow=0,"
+        "Alignment=2,MarginV=60"  # Higher vertical margin (higher up on screen)
+    )
+    
+    # Track 3 (desktop) positioned lower in the bottom third
+    track3_style = (
+        "FontName=Arial,FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
+        "BackColour=&H80000000,Bold=1,Italic=0,BorderStyle=3,Outline=1,Shadow=0,"
+        "Alignment=2,MarginV=20"  # Lower vertical margin (lower on screen)
+    )
+    
+    # Adjust the subtitles file paths format for ffmpeg
+    track2_srt = track2_srt.replace('\\', '/')
+    track3_srt = track3_srt.replace('\\', '/')
+    if os.name == 'nt':
+        track2_srt = track2_srt.replace(':', r'\:')
+        track3_srt = track3_srt.replace(':', r'\:')
+    
+    # Special handling for MKV files
+    temp_mp4 = None
+    try:
+        if input_video.lower().endswith('.mkv'):
+            log("Input is MKV format. Converting to MP4 first...")
+            temp_mp4 = f"{os.path.splitext(output_video)[0]}_temp.mp4"
+            convert_cmd = [
+                'ffmpeg', 
+                '-i', input_video, 
+                '-c:v', 'copy',  # Copy video stream
+                '-c:a', 'aac',   # Convert audio to AAC for better compatibility
+                '-strict', 'experimental',
+                temp_mp4
+            ]
+            
+            log(f"Running conversion command: {' '.join(convert_cmd)}")
+            result = subprocess.run(convert_cmd, capture_output=True, text=True, check=True)
+            log("MKV to MP4 conversion successful")
+            
+            # Now use the temp MP4 as input
+            input_video = temp_mp4
+    
+        # Now embed both subtitle tracks
+        # We use a complex filter to overlay both subtitle tracks
+        command = [
+            'ffmpeg',
+            '-i', input_video,
+            '-vf', 
+            f"subtitles='{track2_srt}':force_style='{track2_style}',subtitles='{track3_srt}':force_style='{track3_style}'",
+            '-c:a', 'copy',
+            output_video
+        ]
+        
+        log(f"Running embedding command: {' '.join(command)}")
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        log(f"Dual subtitles embedded into {output_video} successfully\n")
+        
+    except subprocess.CalledProcessError as e:
+        log(f"ERROR: FFmpeg process failed with exit code {e.returncode}")
+        if hasattr(e, 'stdout') and e.stdout:
+            log(f"Standard output: {e.stdout}")
+        if hasattr(e, 'stderr') and e.stderr:
+            log(f"Standard error: {e.stderr}")
+        
+        # More detailed error handling
+        error_msg = str(e)
+        if "No such file or directory" in error_msg:
+            log("ERROR: One of the files could not be found")
+        elif "Invalid data found when processing input" in error_msg:
+            log("ERROR: The input file format is not properly recognized")
+        elif "Unable to open" in error_msg and ".srt" in error_msg:
+            log("ERROR: Could not open the SRT file - check permissions and path")
+            
+        log(f"Error embedding subtitles: {e}\n")
+        raise RuntimeError(f"Error embedding subtitles: {e}")
+    
+    finally:
+        # Clean up temporary MP4 if it was created
+        if temp_mp4 and os.path.exists(temp_mp4):
+            try:
+                os.remove(temp_mp4)
+                log(f"Removed temporary MP4 file: {temp_mp4}")
+            except Exception as e:
+                log(f"Warning: Could not remove temporary MP4 file: {e}")
+
 def embed_subtitles(input_video, output_video, subtitles_file, log):
-    """Embed subtitles into a video file"""
+    """Embed a single subtitle track into a video file (kept for compatibility)"""
     log(f"Embedding subtitles from {subtitles_file} into {output_video}\n")
     
     # First verify the subtitle file exists and has content

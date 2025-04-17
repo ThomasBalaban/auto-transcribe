@@ -35,8 +35,8 @@ def load_model(model_path="local_modals/vosk-model-en-us-0.42-gigaspeech"):
         log(f"Make sure the model path is correct and the model files exist")
         raise
 
-def convert_to_audio(input_file, output_file):
-    """Convert video to audio, extracting Track 2"""
+def convert_to_audio(input_file, output_file, track_index):
+    """Convert video to audio, extracting specific track by index"""
     try:
         # Get available ffmpeg path
         try:
@@ -57,16 +57,14 @@ def convert_to_audio(input_file, output_file):
             else:
                 raise FileNotFoundError("ffmpeg not found. Please install ffmpeg or provide the full path.")
         
-        # Use a fixed track index of 2 (the second audio track)
-        track_index = 2
-        log(f"Extracting audio track {track_index} (Track2) from video...")
+        log(f"Extracting audio track {track_index} from video...")
         
         # Convert to mono 16kHz WAV which is optimal for Vosk
         # Specify the audio track using -map option
         command = [
             ffmpeg_path, 
             "-i", input_file,
-            "-map", f"0:{track_index}",  # Select Track 2 by index
+            "-map", f"0:{track_index}",  # Select specific track by index
             "-ar", "16000",              # 16kHz sample rate
             "-ac", "1",                  # mono audio
             "-c:a", "pcm_s16le",         # PCM 16-bit format
@@ -78,20 +76,11 @@ def convert_to_audio(input_file, output_file):
         
         if result.returncode != 0:
             log(f"Error in ffmpeg: {result.stderr}")
-            # If Track 2 fails, try with Track 1 as fallback
-            log("Track 2 extraction failed, trying Track 1 as fallback...")
-            command[4] = "0:1"  # Change to Track 1
-            result = subprocess.run(command, capture_output=True, text=True)
-            
-            if result.returncode != 0:
-                log(f"Fallback to Track 1 also failed: {result.stderr}")
-                raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
-            else:
-                log("Successfully extracted Track 1 as fallback")
+            raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
         
         # Verify the output file was created
         if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
-            log(f"Successfully extracted audio to {output_file}")
+            log(f"Successfully extracted audio track {track_index} to {output_file}")
         else:
             log(f"Failed to extract audio: output file is missing or empty")
             raise FileNotFoundError(f"Audio extraction failed: {output_file}")
@@ -105,10 +94,10 @@ def convert_to_audio(input_file, output_file):
         log(f"Error: {e}")
         raise
 
-def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func, language):
+def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func, language, track_name=""):
     try:
         start_time = time.time()
-        log_func(f"Starting transcription for {audio_path} (Track 2)")
+        log_func(f"Starting transcription for {audio_path} ({track_name})")
         
         # Load the model
         model = load_model(model_path)
