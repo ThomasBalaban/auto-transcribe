@@ -36,7 +36,7 @@ def load_model(model_path="local_modals/vosk-model-en-us-0.42-gigaspeech"):
         raise
 
 def convert_to_audio(input_file, output_file, track_index):
-    """Convert video to audio, extracting specific track by index"""
+    """Convert video to audio, extracting specific track by index with noise gate"""
     try:
         # Get available ffmpeg path
         try:
@@ -59,12 +59,13 @@ def convert_to_audio(input_file, output_file, track_index):
         
         log(f"Extracting audio track {track_index} from video...")
         
-        # Convert to mono 16kHz WAV which is optimal for Vosk
-        # Specify the audio track using -map option
+        # Instead of using silenceremove, we'll use a noise gate filter (afftdn)
+        # This preserves timing while reducing background noise
         command = [
             ffmpeg_path, 
             "-i", input_file,
             "-map", f"0:{track_index}",  # Select specific track by index
+            "-af", "afftdn=nf=-35:nr=0.95",  # Stronger noise reduction with -35dB threshold and 95% reduction
             "-ar", "16000",              # 16kHz sample rate
             "-ac", "1",                  # mono audio
             "-c:a", "pcm_s16le",         # PCM 16-bit format
@@ -76,7 +77,20 @@ def convert_to_audio(input_file, output_file, track_index):
         
         if result.returncode != 0:
             log(f"Error in ffmpeg: {result.stderr}")
-            raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
+            # Try again without noise filtering if it failed
+            log("Noise filtering failed, trying without filter...")
+            command = [
+                ffmpeg_path, 
+                "-i", input_file,
+                "-map", f"0:{track_index}",  # Select specific track by index
+                "-ar", "16000",              # 16kHz sample rate
+                "-ac", "1",                  # mono audio
+                "-c:a", "pcm_s16le",         # PCM 16-bit format
+                output_file
+            ]
+            result = subprocess.run(command, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
         
         # Verify the output file was created
         if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
@@ -108,6 +122,26 @@ def create_merged_text(filtered_words):
         return ""
     
     return " ".join(word.get('word', '') for word in filtered_words)
+
+def should_filter_segment(text):
+    """Check if a segment should be filtered based on content"""
+    # Filter out single letters
+    if len(text.strip()) == 1:
+        return True
+    
+    # Filter out segments that only contain "the"
+    if text.strip().lower() == "the":
+        return True
+    
+    # Filter out segments with just articles and simple words
+    stop_words = ["a", "an", "the", "and", "but", "or", "to", "be", "is", "are"]
+    words = text.strip().lower().split()
+    
+    # If segment has only one or two words and they're all stop words
+    if len(words) <= 2 and all(word in stop_words for word in words):
+        return True
+        
+    return False
 
 def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func, language, track_name=""):
     try:
@@ -149,7 +183,6 @@ def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func
             
         # Process results to create transcriptions with confidence filtering
         min_confidence = 0.75  # Minimum confidence threshold
-        min_segment_duration = 0.5  # Minimum segment duration in seconds
         
         for result in results:
             if "result" not in result:
@@ -166,55 +199,50 @@ def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func
             if not filtered_words:
                 continue
             
-            # Create segments with improved timing
-            segments = []
-            current_segment = []
+            # Keep the original start and end times of the entire phrase
             segment_start = filtered_words[0]["start"]
+            segment_end = filtered_words[-1]["end"]
             
-            for i, word in enumerate(filtered_words):
-                current_segment.append(word)
+            # Group words into smaller segments (max 3 words per segment)
+            word_groups = []
+            current_group = []
+            
+            for word in filtered_words:
+                current_group.append(word)
+                if len(current_group) >= 3:
+                    word_groups.append(current_group)
+                    current_group = []
+            
+            # Add any remaining words
+            if current_group:
+                word_groups.append(current_group)
+            
+            # Process each word group
+            for group in word_groups:
+                group_text = " ".join(word["word"] for word in group)
                 
-                # Decide if we should end the segment here
-                end_segment = False
-                
-                # Check if this is the last word
-                if i == len(filtered_words) - 1:
-                    end_segment = True
-                # Or if there's a natural pause (more than 0.5s between words)
-                elif i < len(filtered_words) - 1 and filtered_words[i+1]["start"] - word["end"] > 0.5:
-                    end_segment = True
-                # Or if the segment is getting too long (more than 3 words)
-                elif len(current_segment) >= 3:
-                    end_segment = True
-                
-                if end_segment and current_segment:
-                    segment_end = current_segment[-1]["end"]
-                    segment_duration = segment_end - segment_start
+                # Skip segments with single letters or only "the"
+                if should_filter_segment(group_text):
+                    continue
                     
-                    # Only include segments with minimum duration
-                    if segment_duration >= min_segment_duration:
-                        segment_text = create_merged_text(current_segment)
-                        
-                        if include_timecodes:
-                            transcriptions.append(f"{segment_start:.2f}-{segment_end:.2f}: {segment_text}")
-                        else:
-                            transcriptions.append(segment_text)
-                    
-                    # Reset for next segment
-                    if i < len(filtered_words) - 1:
-                        current_segment = []
-                        segment_start = filtered_words[i+1]["start"]
+                group_start = group[0]["start"]
+                group_end = group[-1]["end"]
+                
+                if include_timecodes:
+                    transcriptions.append(f"{group_start:.2f}-{group_end:.2f}: {group_text}")
+                else:
+                    transcriptions.append(group_text)
         
         transcription_time = time.time() - start_time
-        log_func(f"Transcription completed in {transcription_time:.2f} seconds with confidence filtering.")
+        log_func(f"Transcription completed in {transcription_time:.2f} seconds with filtering.")
         
         # If no transcriptions were generated after filtering, add a message
         if not transcriptions:
-            log_func("No high-confidence speech detected after filtering.")
+            log_func("No speech detected after filtering.")
             if include_timecodes:
-                transcriptions = [f"0.0-5.0: No reliable speech detected in {track_name}"]
+                transcriptions = [f"0.0-5.0: No speech detected in {track_name}"]
             else:
-                transcriptions = [f"No reliable speech detected in {track_name}"]
+                transcriptions = [f"No speech detected in {track_name}"]
         
         return transcriptions
         
