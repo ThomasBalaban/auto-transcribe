@@ -1,5 +1,6 @@
 import os
 import subprocess
+from subtitle_styles import TRACK2_STYLE, TRACK3_STYLE
 
 
 def embed_dual_subtitles(input_video, output_video, track2_srt, track3_srt, log):
@@ -46,23 +47,11 @@ def embed_dual_subtitles(input_video, output_video, track2_srt, track3_srt, log)
         subprocess.run(cmd, check=True)
         input_video = temp_mp4  # Use converted file for embedding
 
-    # Define styles for subtitle tracks
-    style2 = (
-        "FontName=Arial,FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
-        "BackColour=&H80000000,Bold=1,Italic=0,BorderStyle=3,Outline=1,Shadow=0,"
-        "Alignment=2,MarginV=60"
-    )
-    style3 = (
-        "FontName=Arial,FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
-        "BackColour=&H80000000,Bold=1,Italic=0,BorderStyle=3,Outline=1,Shadow=0,"
-        "Alignment=2,MarginV=20"
-    )
-
     # Embed the subtitles into the video
     cmd = [
         'ffmpeg', '-i', input_video,
         '-vf',
-        f"subtitles='{track2_srt_fmt}':force_style='{style2}',subtitles='{track3_srt_fmt}':force_style='{style3}'",
+        f"subtitles='{track2_srt_fmt}':force_style='{TRACK2_STYLE}',subtitles='{track3_srt_fmt}':force_style='{TRACK3_STYLE}'",
         '-c:a', 'copy', output_video
     ]
     log(f"Running embedding command: {' '.join(cmd)}")

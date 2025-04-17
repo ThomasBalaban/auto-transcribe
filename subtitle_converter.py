@@ -70,7 +70,7 @@ def intelligent_phrase_segmentation(text, max_chars_per_line=42):
     return result
 
 
-def convert_to_srt(input_text, output_file, video_file, log):
+def convert_to_srt(input_text, output_file, video_file, log, is_mic_track=False):
     """Convert text to SRT format with intelligent phrase segmentation while preserving timestamps"""
     log(f"Converting transcription to SRT format with improved segmentation: {output_file}")
     video_duration = get_video_duration(video_file, log)
@@ -99,6 +99,10 @@ def convert_to_srt(input_text, output_file, video_file, log):
                 start_formatted = format_time(start_time)
                 end_formatted = format_time(end_time)
                 
+                # Convert text to uppercase if it's the microphone track
+                if is_mic_track:
+                    text = text.upper()
+                
                 # Create the subtitle entry with the original text
                 srt_file.write(f"{subtitle_count}\n")
                 srt_file.write(f"{start_formatted} --> {end_formatted}\n")
@@ -110,6 +114,10 @@ def convert_to_srt(input_text, output_file, video_file, log):
                 text = line.strip()
                 if not text:
                     continue
+                    
+                # Convert text to uppercase if it's the microphone track
+                if is_mic_track:
+                    text = text.upper()
                     
                 # Split text into chunks of max 3 words
                 words = text.split()
