@@ -1,2 +1,3 @@
 customtkinter
 faster-whisper
+vosk==0.3.44
