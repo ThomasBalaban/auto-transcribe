@@ -8,6 +8,7 @@ import traceback
 from tkinter import filedialog, messagebox
 from transcriber import transcribe_audio, convert_to_audio, write_transcriptions_to_file
 from embedder import convert_to_srt, embed_dual_subtitles
+from intro_title import add_intro_title  # Updated import for intro title
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -58,6 +59,11 @@ class DualSubtitleApp:
         self.output_entry = ctk.CTkEntry(frame, width=400)
         self.output_entry.grid(row=1, column=1, padx=5, pady=5)
         ctk.CTkButton(frame, text="Browse", command=self.browse_output).grid(row=1, column=2, padx=5, pady=5)
+        
+        # Intro title input (new)
+        ctk.CTkLabel(frame, text="Intro Title (optional):").grid(row=2, column=0, sticky="w", pady=5)
+        self.title_entry = ctk.CTkEntry(frame, width=400)
+        self.title_entry.grid(row=2, column=1, padx=5, pady=5)
         
         # Hidden but always-on timecode variable
         self.timecodes_var = ctk.BooleanVar(value=True)
@@ -207,7 +213,7 @@ class DualSubtitleApp:
             # Convert Track 2 transcriptions to SRT
             self.log("Converting Track 2 transcriptions to SRT format...")
             track2_text = "\n".join(track2_transcriptions)
-            convert_to_srt(track2_text, track2_srt_path, input_file, self.log)
+            convert_to_srt(track2_text, track2_srt_path, input_file, self.log, is_mic_track=True)
                 
             # Process Track 3 (Desktop)
             self.log("\nPROCESSING TRACK 3 (DESKTOP):")
@@ -242,7 +248,7 @@ class DualSubtitleApp:
             # Convert Track 3 transcriptions to SRT
             self.log("Converting Track 3 transcriptions to SRT format...")
             track3_text = "\n".join(track3_transcriptions)
-            convert_to_srt(track3_text, track3_srt_path, input_file, self.log)
+            convert_to_srt(track3_text, track3_srt_path, input_file, self.log, is_mic_track=False)
                 
             # Display combined transcription for editing - must use main thread
             def update_transcription_box():
@@ -267,10 +273,36 @@ class DualSubtitleApp:
             self.log("\nEmbedding both subtitle tracks into video...")
             
             try:
-                # Embed both subtitle tracks
-                embed_dual_subtitles(input_file, output_file, track2_srt_path, track3_srt_path, self.log)
-                self.log("Complete process finished successfully!")
+                # Get intro title text
+                intro_title = self.title_entry.get().strip()
+                
+                # For regular output without intro title
+                if not intro_title:
+                    # Just embed the subtitles and we're done
+                    embed_dual_subtitles(input_file, output_file, track2_srt_path, track3_srt_path, self.log)
+                    self.log("Complete process finished successfully!")
+                else:
+                    # For output with intro title
+                    # First create a temporary file with subtitles
+                    temp_subtitled_file = os.path.join(temp_dir, "temp_subtitled.mp4")
                     
+                    # Embed subtitles into temporary file
+                    embed_dual_subtitles(input_file, temp_subtitled_file, track2_srt_path, track3_srt_path, self.log)
+                    
+                    # Now add the intro title overlay
+                    self.log(f"\nAdding intro title overlay: '{intro_title}'")
+                    success = add_intro_title(temp_subtitled_file, output_file, intro_title, 5.0, self.log)
+                    
+                    if success:
+                        self.log("Intro title overlay added successfully!")
+                        self.log("Complete process finished successfully!")
+                    else:
+                        self.log("WARNING: Failed to add intro title overlay to video.")
+                        # If title overlay failed, just use the subtitled version
+                        import shutil
+                        shutil.copy(temp_subtitled_file, output_file)
+                        self.log("Used subtitled version without intro title as final output.")
+                
             except Exception as e:
                 self.log(f"ERROR during processing: {str(e)}")
                 self.log(traceback.format_exc())

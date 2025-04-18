@@ -2,7 +2,6 @@ import os
 import subprocess
 from subtitle_styles import TRACK2_STYLE, TRACK3_STYLE
 
-
 def embed_dual_subtitles(input_video, output_video, track2_srt, track3_srt, log):
     """Embed two subtitle tracks into a video file with different positions"""
     log(f"Embedding dual subtitles into video...")
@@ -47,17 +46,42 @@ def embed_dual_subtitles(input_video, output_video, track2_srt, track3_srt, log)
         subprocess.run(cmd, check=True)
         input_video = temp_mp4  # Use converted file for embedding
 
-    # Embed the subtitles into the video
-    cmd = [
-        'ffmpeg', '-i', input_video,
-        '-vf',
-        f"subtitles='{track2_srt_fmt}':force_style='{TRACK2_STYLE}',subtitles='{track3_srt_fmt}':force_style='{TRACK3_STYLE}'",
-        '-c:a', 'copy', output_video
+    # Use a two-pass approach for better control
+    temp_dir = os.path.dirname(output_video)
+    temp_with_first_sub = os.path.join(temp_dir, "temp_with_first_sub.mp4")
+    
+    # First embed Track 2 (Mic) subtitles
+    cmd1 = [
+        'ffmpeg', '-y', 
+        '-i', input_video,
+        '-vf', f"subtitles='{track2_srt_fmt}':force_style='{TRACK2_STYLE}'",
+        '-c:a', 'copy', 
+        temp_with_first_sub
     ]
-    log(f"Running embedding command: {' '.join(cmd)}")
-    subprocess.run(cmd, check=True)
+    log(f"Running first embedding command (mic track): {' '.join(cmd1)}")
+    subprocess.run(cmd1, check=True)
+    
+    # Then embed Track 3 (Desktop) subtitles
+    cmd2 = [
+        'ffmpeg', '-y', 
+        '-i', temp_with_first_sub,
+        '-vf', f"subtitles='{track3_srt_fmt}':force_style='{TRACK3_STYLE}'",
+        '-c:a', 'copy', 
+        output_video
+    ]
+    log(f"Running second embedding command (desktop track): {' '.join(cmd2)}")
+    subprocess.run(cmd2, check=True)
+    
     log(f"Dual subtitles embedded into {output_video} successfully\n")
 
+    # Clean up temporary files
+    try:
+        if os.path.exists(temp_with_first_sub):
+            os.remove(temp_with_first_sub)
+            log(f"Deleted temporary file: {temp_with_first_sub}")
+    except Exception as e:
+        log(f"WARNING: Failed to delete temporary file {temp_with_first_sub}: {e}")
+        
     # Clean up temp MP4 file if created
     if temp_mp4 and os.path.exists(temp_mp4):
         try:
