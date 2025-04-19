@@ -42,11 +42,11 @@ class DesktopStyle:
     BACKGROUND_COLOR = "&HFFFFFFFF"  # White background
     BOLD = 1
     ITALIC = 0
-    BORDER_STYLE = 3  # Background box
-    OUTLINE = 1
-    SHADOW = 0
+    BORDER_STYLE = 1  # Background box
+    OUTLINE = 3
+    SHADOW = 1
     ALIGNMENT = 2  # Bottom-center
-    MARGIN_V = 40  # Lower value = lower position (below mic track)
+    MARGIN_V = 55  # Lower value = lower position (below mic track)
     MARGIN_L = 40  # Left margin
     MARGIN_R = 40  # Right margin
     
