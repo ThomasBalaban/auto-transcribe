@@ -34,16 +34,16 @@ class MicrophoneStyle:
 
 
 class DesktopStyle:
-    """Style for Track 3 (Desktop) - Black text on white background, positioned below mic subtitles"""
-    FONT_NAME = "Arial"
-    FONT_SIZE = 12
-    PRIMARY_COLOR = "&H00000000"  # Black
-    OUTLINE_COLOR = "&H00FFFFFF"  # White
-    BACKGROUND_COLOR = "&HFFFFFFFF"  # White background
+    """Style for Track 3 (Desktop) - positioned below mic subtitles"""
+    FONT_NAME = "TT Rounds Neue Trial"
+    FONT_SIZE = 13
+    PRIMARY_COLOR = "&H0091e1fe"
+    OUTLINE_COLOR = "&H00171717"
+    BACKGROUND_COLOR = "&HFFFFFFFF"
     BOLD = 1
     ITALIC = 0
-    BORDER_STYLE = 1  # Background box
-    OUTLINE = 3
+    BORDER_STYLE = 1
+    OUTLINE = 2
     SHADOW = 1
     ALIGNMENT = 2  # Bottom-center
     MARGIN_V = 55  # Lower value = lower position (below mic track)
