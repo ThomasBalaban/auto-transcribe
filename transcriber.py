@@ -8,7 +8,7 @@ from faster_whisper import WhisperModel  # type: ignore
 
 # Try importing WhisperX components with explicit error handling
 try:
-    from whisperx import load_align_model, align
+    from whisperx import load_align_model, align # type: ignore
     WHISPERX_AVAILABLE = True
 except ImportError as e:
     print(f"WhisperX import error: {e}")
@@ -131,6 +131,7 @@ def align_with_whisperx(audio_path, whisperx_segments, device="cpu"):
         model_a = load_align_model("en", device)
         
         log(f"Running WhisperX alignment on {len(whisperx_segments)} segments...")
+        # Pass audio_path correctly to align function
         result = align(whisperx_segments, model_a, audio_path, device)
         
         # Check if the alignment returned valid results
@@ -139,6 +140,17 @@ def align_with_whisperx(audio_path, whisperx_segments, device="cpu"):
             return None
             
         log(f"WhisperX alignment successful: {len(result['segments'])} segments")
+        
+        # Detailed logging of WhisperX results
+        for i, segment in enumerate(result['segments'][:3]):  # Show first 3 segments
+            log(f"WhisperX segment {i}: {segment['start']:.2f}s - {segment['end']:.2f}s: '{segment['text']}'")
+            if 'words' in segment:
+                log(f"  Contains {len(segment['words'])} aligned words")
+                for j, word in enumerate(segment['words'][:3]):  # Show first 3 words
+                    log(f"    Word {j}: {word['start']:.2f}s - {word['end']:.2f}s: '{word['word']}'")
+            else:
+                log("  No word-level alignment in this segment")
+        
         return result["segments"]
     except Exception as e:
         log(f"WhisperX alignment failed: {e}")
@@ -146,6 +158,10 @@ def align_with_whisperx(audio_path, whisperx_segments, device="cpu"):
         log(f"WhisperX traceback: {traceback.format_exc()}")
         return None
 
+
+
+
+# Let's modify the transcribe_audio function in transcriber.py to focus on accurate timing
 def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func, language, track_name=""):
     try:
         start_time = time.time()
@@ -173,14 +189,13 @@ def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func
 
         log_func("Transcribing with Whisper...")
         try:
-            # Using very relaxed VAD settings to catch more speech
+            # Using word-level timestamps and no VAD filter for maximum accuracy
             segments, info = model.transcribe(
                 audio_path,
                 language=lang,
-                vad_filter=True,
+                vad_filter=False,  # Disable VAD filtering to get raw results
                 word_timestamps=True,
                 beam_size=5,
-                vad_parameters={"min_silence_duration_ms": 100},  # More sensitive
                 condition_on_previous_text=False
             )
             
@@ -196,18 +211,18 @@ def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func
         log_func(f"Found {len(segments_list)} segments")
         
         # Debug information about each segment
-        for i, segment in enumerate(segments_list):
+        for i, segment in enumerate(segments_list[:5]):  # Show just the first 5 for brevity
             log_func(f"Segment {i+1}: [{segment.start:.2f}s -> {segment.end:.2f}s] '{segment.text}'")
             if segment.words:
                 log_func(f"  Words: {len(segment.words)}")
-                for j, word in enumerate(segment.words[:5]):  # Show first 5 words only
+                for j, word in enumerate(segment.words[:3]):  # Show first 3 words only
                     log_func(f"    Word {j+1}: [{word.start:.2f}s -> {word.end:.2f}s] '{word.word}'")
-                if len(segment.words) > 5:
-                    log_func(f"    ... and {len(segment.words)-5} more words")
+                if len(segment.words) > 3:
+                    log_func(f"    ... and {len(segment.words)-3} more words")
             else:
                 log_func("  No word timestamps in this segment")
 
-        # If we have segments with words, try to run WhisperX alignment
+        # If WhisperX is available, prioritize its alignment
         if WHISPERX_AVAILABLE and segments_list and any(segment.words for segment in segments_list):
             try:
                 # Prepare segments for WhisperX
@@ -234,7 +249,7 @@ def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func
         else:
             use_whisperx = False
 
-        # Handle transcription output
+        # Handle transcription output - focusing on raw timing
         transcriptions = []
         word_count = 0
 
@@ -247,14 +262,12 @@ def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func
                     word_start = word["start"]
                     word_end = word["end"]
 
-                    if should_filter_word(word_text):
+                    # Only basic filtering for completely unusable items
+                    if not word_text.strip():
                         continue
 
-                    if word_end - word_start < 0.3:  # Avoid words that are too short
-                        word_end = word_start + 0.3  # Ensure minimum duration
-
                     if is_mic_track:
-                        word_text = word_text.upper()  # Optional: Capitalize for mic tracks
+                        word_text = word_text.upper()  # Uppercase for mic tracks
 
                     if include_timecodes:
                         transcriptions.append(f"{word_start:.2f}-{word_end:.2f}: {word_text}")
@@ -269,14 +282,12 @@ def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func
                     word_start = word.start
                     word_end = word.end
 
-                    if should_filter_word(word_text):
+                    # Only basic filtering for completely unusable items
+                    if not word_text.strip():
                         continue
 
-                    if word_end - word_start < 0.3:  # Avoid words that are too short
-                        word_end = word_start + 0.3  # Ensure minimum duration
-
                     if is_mic_track:
-                        word_text = word_text.upper()  # Optional: Capitalize for mic tracks
+                        word_text = word_text.upper()  # Uppercase for mic tracks
 
                     if include_timecodes:
                         transcriptions.append(f"{word_start:.2f}-{word_end:.2f}: {word_text}")
@@ -291,6 +302,10 @@ def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func
     except Exception as e:
         log_func(f"Error in transcription process: {e}")
         return [f"0.0-5.0: Transcription error: {str(e)}"]
+
+
+
+
 
 def write_transcriptions_to_file(transcriptions, output_file):
     """Writes transcriptions to a file"""
