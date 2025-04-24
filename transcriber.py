@@ -1,15 +1,18 @@
 import os
 import time
 import json
-import wave
 import subprocess
 import sys
+import numpy as np  # type: ignore
+from faster_whisper import WhisperModel  # type: ignore
 
-# Set environment variable FIRST
-os.environ["VOSK_SILENT"] = "1"  
-
-# Now import Vosk 
-from vosk import Model, KaldiRecognizer # type: ignore
+# Try importing WhisperX components with explicit error handling
+try:
+    from whisperx import load_align_model, align
+    WHISPERX_AVAILABLE = True
+except ImportError as e:
+    print(f"WhisperX import error: {e}")
+    WHISPERX_AVAILABLE = False
 
 log_box = None
 
@@ -24,233 +27,277 @@ def log(message):
     else:
         print(message.encode('utf-8', errors='replace').decode('utf-8'))
 
-def load_model(model_path="local_modals/vosk-model-en-us-0.42-gigaspeech"):
-    log(f"Loading Vosk model from {model_path}...")
+def load_model(model_path="large", device="cpu"):
+    log(f"Loading Whisper model {model_path} on {device}...")
     try:
-        # On Mac, ensure path uses correct format
-        model_path = os.path.expanduser(model_path)
-        return Model(model_path)
+        compute_type = "float32"
+        if device == "cuda":
+            compute_type = "float16"
+
+        # Create the model - using simpler approach without batch processing
+        model = WhisperModel(model_path, device=device, compute_type=compute_type)
+        return model
     except Exception as e:
         log(f"Error loading model: {e}")
-        log(f"Make sure the model path is correct and the model files exist")
         raise
 
 def convert_to_audio(input_file, output_file, track_index):
-    """Convert video to audio, extracting specific track by index with noise gate"""
     try:
-        # Get available ffmpeg path
         try:
             subprocess.run(["which", "ffmpeg"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             ffmpeg_path = "ffmpeg"
         except subprocess.CalledProcessError:
-            # If ffmpeg is not in PATH, try with full path for Mac
-            mac_ffmpeg_paths = [
-                "/usr/local/bin/ffmpeg",
-                "/opt/homebrew/bin/ffmpeg",
-                "/opt/local/bin/ffmpeg"
-            ]
-            
-            for path in mac_ffmpeg_paths:
+            mac_paths = ["/usr/local/bin/ffmpeg", "/opt/homebrew/bin/ffmpeg", "/opt/local/bin/ffmpeg"]
+            for path in mac_paths:
                 if os.path.exists(path):
                     ffmpeg_path = path
                     break
             else:
-                raise FileNotFoundError("ffmpeg not found. Please install ffmpeg or provide the full path.")
+                raise FileNotFoundError("ffmpeg not found.")
+
+        log(f"Extracting audio track {track_index}...")
         
-        log(f"Extracting audio track {track_index} from video...")
-        
-        # Instead of using silenceremove, we'll use a noise gate filter (afftdn)
-        # This preserves timing while reducing background noise
-        command = [
-            ffmpeg_path, 
+        # First, let's try a simple extraction without filters to check if the track exists
+        check_cmd = [
+            ffmpeg_path,
             "-i", input_file,
-            "-map", f"0:{track_index}",  # Select specific track by index
-            "-af", "afftdn=nf=-35:nr=0.95",  # Stronger noise reduction with -35dB threshold and 95% reduction
-            "-ar", "16000",              # 16kHz sample rate
-            "-ac", "1",                  # mono audio
-            "-c:a", "pcm_s16le",         # PCM 16-bit format
+            "-map", f"0:{track_index}",
+            "-f", "null",
+            "-"
+        ]
+        
+        try:
+            # Just check if this track exists
+            check_result = subprocess.run(check_cmd, capture_output=True, text=True)
+            if check_result.returncode != 0:
+                log(f"WARNING: Track {track_index} might not exist: {check_result.stderr}")
+                
+            # Try to get more info about the track
+            info_cmd = [ffmpeg_path, "-i", input_file]
+            info_result = subprocess.run(info_cmd, capture_output=True, text=True)
+            log(f"File info: {info_result.stderr}")
+        except Exception as e:
+            log(f"Track check failed: {e}")
+        
+        # Proceed with regular extraction
+        command = [
+            ffmpeg_path,
+            "-i", input_file,
+            "-map", f"0:{track_index}",
+            "-ar", "16000",  # Remove noise filtering for now
+            "-ac", "1",
+            "-c:a", "pcm_s16le",
             output_file
         ]
         
-        log(f"Running ffmpeg command: {' '.join(command)}")
+        log(f"Running extraction command: {' '.join(command)}")
         result = subprocess.run(command, capture_output=True, text=True)
         
         if result.returncode != 0:
-            log(f"Error in ffmpeg: {result.stderr}")
-            # Try again without noise filtering if it failed
-            log("Noise filtering failed, trying without filter...")
-            command = [
-                ffmpeg_path, 
-                "-i", input_file,
-                "-map", f"0:{track_index}",  # Select specific track by index
-                "-ar", "16000",              # 16kHz sample rate
-                "-ac", "1",                  # mono audio
-                "-c:a", "pcm_s16le",         # PCM 16-bit format
-                output_file
-            ]
-            result = subprocess.run(command, capture_output=True, text=True)
-            if result.returncode != 0:
-                raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
-        
-        # Verify the output file was created
-        if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
-            log(f"Successfully extracted audio track {track_index} to {output_file}")
-        else:
-            log(f"Failed to extract audio: output file is missing or empty")
+            log(f"Extraction failed: {result.stderr}")
+            raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
+
+        if not os.path.exists(output_file) or os.path.getsize(output_file) == 0:
             raise FileNotFoundError(f"Audio extraction failed: {output_file}")
-            
-    except subprocess.CalledProcessError as e:
-        log(f"Error converting video to audio: {e}")
-        if hasattr(e, 'stderr'):
-            log(f"ffmpeg error: {e.stderr}")
-        raise
-    except FileNotFoundError as e:
-        log(f"Error: {e}")
-        raise
 
-def filter_low_confidence_words(words, min_confidence=0.75):
-    """Filter out words with confidence below the threshold"""
-    if not words:
-        return []
-    
-    filtered_words = [word for word in words if word.get('conf', 0) >= min_confidence]
-    return filtered_words
-
-def create_merged_text(filtered_words):
-    """Create a clean text from filtered words"""
-    if not filtered_words:
-        return ""
-    
-    return " ".join(word.get('word', '') for word in filtered_words)
-
-def should_filter_segment(text):
-    """Check if a segment should be filtered based on content"""
-    # Filter out single letters
-    if len(text.strip()) == 1:
-        return True
-    
-    # Filter out segments that only contain "the"
-    if text.strip().lower() == "the":
-        return True
-    
-    # Filter out segments with just articles and simple words
-    stop_words = ["a", "an", "the", "and", "but", "or", "to", "be", "is", "are"]
-    words = text.strip().lower().split()
-    
-    # If segment has only one or two words and they're all stop words
-    if len(words) <= 2 and all(word in stop_words for word in words):
-        return True
+        # Add debug info about the extracted audio
+        audio_info_cmd = [ffmpeg_path, "-i", output_file]
+        audio_info = subprocess.run(audio_info_cmd, capture_output=True, text=True)
+        log(f"Extracted audio info: {audio_info.stderr}")
         
+        log(f"Audio extracted to {output_file} (size: {os.path.getsize(output_file)} bytes)")
+        return True
+    except Exception as e:
+        log(f"Error converting video to audio: {e}")
+        import traceback
+        log(f"Traceback: {traceback.format_exc()}")
+        return False
+
+def should_filter_word(word):
+    if len(word.strip()) <= 1 and word.strip().lower() not in ['i', 'a']:
+        return True
+    if word.strip().lower() in ['um', 'uh', 'er', 'ah']:
+        return True
     return False
+
+def align_with_whisperx(audio_path, whisperx_segments, device="cpu"):
+    """Align segments with WhisperX for improved word-level timestamps"""
+    if not WHISPERX_AVAILABLE:
+        log("WhisperX not available. Skipping alignment.")
+        return None
+        
+    try:
+        log(f"Loading WhisperX alignment model on {device}...")
+        model_a = load_align_model("en", device)
+        
+        log(f"Running WhisperX alignment on {len(whisperx_segments)} segments...")
+        result = align(whisperx_segments, model_a, audio_path, device)
+        
+        # Check if the alignment returned valid results
+        if not result or "segments" not in result:
+            log("WhisperX alignment returned invalid result")
+            return None
+            
+        log(f"WhisperX alignment successful: {len(result['segments'])} segments")
+        return result["segments"]
+    except Exception as e:
+        log(f"WhisperX alignment failed: {e}")
+        import traceback
+        log(f"WhisperX traceback: {traceback.format_exc()}")
+        return None
 
 def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func, language, track_name=""):
     try:
         start_time = time.time()
         log_func(f"Starting transcription for {audio_path} ({track_name})")
         
-        # Load the model
-        model = load_model(model_path)
-        
-        # Open the audio file
-        wf = wave.open(audio_path, "rb")
-        if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getcomptype() != "NONE":
-            log_func("Audio file must be WAV format mono PCM.")
-            return []
+        # Check if the audio file exists and has size
+        if not os.path.exists(audio_path):
+            log_func(f"ERROR: Audio file not found: {audio_path}")
+            return [f"0.0-5.0: Audio file not found: {audio_path}"] if include_timecodes else ["Audio file not found"]
             
-        # Create recognizer
-        rec = KaldiRecognizer(model, wf.getframerate())
-        rec.SetWords(True)  # Enable word timestamps
-        rec.SetPartialWords(True)  # Enable partial results with word timing
+        file_size = os.path.getsize(audio_path)
+        if file_size == 0:
+            log_func(f"ERROR: Audio file is empty: {audio_path}")
+            return [f"0.0-5.0: Audio file is empty"] if include_timecodes else ["Audio file is empty"]
+            
+        log_func(f"Audio file size: {file_size} bytes")
 
-        transcriptions = []
-        results = []
+        # Set the language for transcription
+        lang = "en" if language == "English" else language.lower()
+
+        # Load the Whisper model
+        model = load_model(model_path=model_path, device=device)
+
+        is_mic_track = "mic" in track_name.lower() or "track 2" in track_name.lower()
+
+        log_func("Transcribing with Whisper...")
+        try:
+            # Using very relaxed VAD settings to catch more speech
+            segments, info = model.transcribe(
+                audio_path,
+                language=lang,
+                vad_filter=True,
+                word_timestamps=True,
+                beam_size=5,
+                vad_parameters={"min_silence_duration_ms": 100},  # More sensitive
+                condition_on_previous_text=False
+            )
+            
+            log_func(f"Whisper detected language: {info.language} ({info.language_probability:.2f})")
+        except Exception as e:
+            log_func(f"Error during transcription: {e}")
+            import traceback
+            log_func(f"Transcription traceback: {traceback.format_exc()}")
+            return [f"0.0-5.0: Transcription error: {str(e)}"] if include_timecodes else [f"Transcription error: {str(e)}"]
+
+        # Convert segments iterator to list
+        segments_list = list(segments)
+        log_func(f"Found {len(segments_list)} segments")
         
-        # Process audio chunks
-        while True:
-            data = wf.readframes(4000)  # Read audio in chunks
-            if len(data) == 0:
-                break
-                
-            if rec.AcceptWaveform(data):
-                result = json.loads(rec.Result())
-                if "result" in result:
-                    results.append(result)
-                
-        # Get final result
-        final_result = json.loads(rec.FinalResult())
-        if "result" in final_result:
-            results.append(final_result)
-            
-        # Process results to create transcriptions with confidence filtering
-        min_confidence = 0.75  # Minimum confidence threshold
-        
-        for result in results:
-            if "result" not in result:
-                continue
-                
-            words = result["result"]
-            if not words:
-                continue
-                
-            # Filter out low-confidence words
-            filtered_words = filter_low_confidence_words(words, min_confidence)
-            
-            # Skip if no words remain after filtering
-            if not filtered_words:
-                continue
-            
-            # Keep the original start and end times of the entire phrase
-            segment_start = filtered_words[0]["start"]
-            segment_end = filtered_words[-1]["end"]
-            
-            # Group words into smaller segments (max 3 words per segment)
-            word_groups = []
-            current_group = []
-            
-            for word in filtered_words:
-                current_group.append(word)
-                if len(current_group) >= 3:
-                    word_groups.append(current_group)
-                    current_group = []
-            
-            # Add any remaining words
-            if current_group:
-                word_groups.append(current_group)
-            
-            # Process each word group
-            for group in word_groups:
-                group_text = " ".join(word["word"] for word in group)
-                
-                # Skip segments with single letters or only "the"
-                if should_filter_segment(group_text):
-                    continue
-                    
-                group_start = group[0]["start"]
-                group_end = group[-1]["end"]
-                
-                if include_timecodes:
-                    transcriptions.append(f"{group_start:.2f}-{group_end:.2f}: {group_text}")
-                else:
-                    transcriptions.append(group_text)
-        
-        transcription_time = time.time() - start_time
-        log_func(f"Transcription completed in {transcription_time:.2f} seconds with filtering.")
-        
-        # If no transcriptions were generated after filtering, add a message
-        if not transcriptions:
-            log_func("No speech detected after filtering.")
-            if include_timecodes:
-                transcriptions = [f"0.0-5.0: No speech detected in {track_name}"]
+        # Debug information about each segment
+        for i, segment in enumerate(segments_list):
+            log_func(f"Segment {i+1}: [{segment.start:.2f}s -> {segment.end:.2f}s] '{segment.text}'")
+            if segment.words:
+                log_func(f"  Words: {len(segment.words)}")
+                for j, word in enumerate(segment.words[:5]):  # Show first 5 words only
+                    log_func(f"    Word {j+1}: [{word.start:.2f}s -> {word.end:.2f}s] '{word.word}'")
+                if len(segment.words) > 5:
+                    log_func(f"    ... and {len(segment.words)-5} more words")
             else:
-                transcriptions = [f"No speech detected in {track_name}"]
+                log_func("  No word timestamps in this segment")
+
+        # If we have segments with words, try to run WhisperX alignment
+        if WHISPERX_AVAILABLE and segments_list and any(segment.words for segment in segments_list):
+            try:
+                # Prepare segments for WhisperX
+                whisperx_segments = []
+                for segment in segments_list:
+                    whisperx_segments.append({
+                        "start": segment.start,
+                        "end": segment.end,
+                        "text": segment.text
+                    })
+                
+                log_func("Running WhisperX alignment for improved timing...")
+                aligned_segments = align_with_whisperx(audio_path, whisperx_segments, device)
+                
+                if aligned_segments:
+                    log_func("Using WhisperX aligned segments for better timing")
+                    use_whisperx = True
+                else:
+                    log_func("WhisperX alignment failed, using original Whisper timestamps")
+                    use_whisperx = False
+            except Exception as e:
+                log_func(f"WhisperX processing error: {e}")
+                use_whisperx = False
+        else:
+            use_whisperx = False
+
+        # Handle transcription output
+        transcriptions = []
+        word_count = 0
+
+        if use_whisperx:
+            log_func("Processing WhisperX aligned words...")
+            for segment in aligned_segments:
+                for word in segment["words"]:
+                    word_count += 1
+                    word_text = word["word"]
+                    word_start = word["start"]
+                    word_end = word["end"]
+
+                    if should_filter_word(word_text):
+                        continue
+
+                    if word_end - word_start < 0.3:  # Avoid words that are too short
+                        word_end = word_start + 0.3  # Ensure minimum duration
+
+                    if is_mic_track:
+                        word_text = word_text.upper()  # Optional: Capitalize for mic tracks
+
+                    if include_timecodes:
+                        transcriptions.append(f"{word_start:.2f}-{word_end:.2f}: {word_text}")
+                    else:
+                        transcriptions.append(word_text)
+        else:
+            log_func("Using Whisper's original word timestamps...")
+            for segment in segments_list:
+                for word in segment.words:
+                    word_count += 1
+                    word_text = word.word
+                    word_start = word.start
+                    word_end = word.end
+
+                    if should_filter_word(word_text):
+                        continue
+
+                    if word_end - word_start < 0.3:  # Avoid words that are too short
+                        word_end = word_start + 0.3  # Ensure minimum duration
+
+                    if is_mic_track:
+                        word_text = word_text.upper()  # Optional: Capitalize for mic tracks
+
+                    if include_timecodes:
+                        transcriptions.append(f"{word_start:.2f}-{word_end:.2f}: {word_text}")
+                    else:
+                        transcriptions.append(word_text)
+
+        log_func(f"Processed {word_count} words.")
+        log_func(f"Transcription took {time.time() - start_time:.2f} seconds.")
         
         return transcriptions
-        
-    except Exception as e:
-        log_func(f"An error occurred: {e}")
-        return []
 
-def write_transcriptions_to_file(transcriptions, output_path):
-    with open(output_path, 'w', encoding='utf-8') as file:
-        for line in transcriptions:
-            file.write(line + '\n')
+    except Exception as e:
+        log_func(f"Error in transcription process: {e}")
+        return [f"0.0-5.0: Transcription error: {str(e)}"]
+
+def write_transcriptions_to_file(transcriptions, output_file):
+    """Writes transcriptions to a file"""
+    try:
+        with open(output_file, 'w') as file:
+            for transcription in transcriptions:
+                file.write(transcription + "\n")
+        log(f"Transcriptions written to {output_file}")
+    except Exception as e:
+        log(f"Error writing transcriptions to file: {e}")

@@ -60,31 +60,51 @@ class DualSubtitleApp:
         self.output_entry.grid(row=1, column=1, padx=5, pady=5)
         ctk.CTkButton(frame, text="Browse", command=self.browse_output).grid(row=1, column=2, padx=5, pady=5)
         
-        # Intro title input (new)
+        # Intro title input
         ctk.CTkLabel(frame, text="Intro Title (optional):").grid(row=2, column=0, sticky="w", pady=5)
         self.title_entry = ctk.CTkEntry(frame, width=400)
         self.title_entry.grid(row=2, column=1, padx=5, pady=5)
+        
+        # Add model selection dropdown
+        ctk.CTkLabel(frame, text="Whisper Model:").grid(row=3, column=0, sticky="w", pady=5)
+        self.model_var = ctk.StringVar(value="large")
+        model_dropdown = ctk.CTkOptionMenu(
+            frame,
+            values=["tiny", "base", "small", "medium", "large"],
+            variable=self.model_var
+        )
+        model_dropdown.grid(row=3, column=1, sticky="w", padx=5, pady=5)
+        
+        # Add device selection
+        ctk.CTkLabel(frame, text="Device:").grid(row=3, column=1, sticky="e", pady=5)
+        self.device_var = ctk.StringVar(value="cpu")
+        device_dropdown = ctk.CTkOptionMenu(
+            frame,
+            values=["cpu", "cuda"],
+            variable=self.device_var
+        )
+        device_dropdown.grid(row=3, column=2, sticky="w", padx=5, pady=5)
         
         # Hidden but always-on timecode variable
         self.timecodes_var = ctk.BooleanVar(value=True)
         
         # Main process button
         ctk.CTkButton(frame, text="Transcribe & Embed Subtitles", 
-                     command=self.start_complete_process_thread,
-                     height=40,
-                     font=("Arial", 14, "bold")).grid(row=3, column=0, columnspan=3, pady=10)
+                    command=self.start_complete_process_thread,
+                    height=40,
+                    font=("Arial", 14, "bold")).grid(row=4, column=0, columnspan=3, pady=10)
         
         # Transcription text area
         ctk.CTkLabel(frame, text="Transcription Preview (both tracks will be shown here after processing):").grid(
-            row=4, column=0, columnspan=3, sticky="w", pady=(10, 0))
+            row=5, column=0, columnspan=3, sticky="w", pady=(10, 0))
         self.transcription_textbox = ctk.CTkTextbox(frame, height=250, width=600)
-        self.transcription_textbox.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        self.transcription_textbox.grid(row=6, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
         
         # Log area
         ctk.CTkLabel(frame, text="Processing Log:").grid(
-            row=6, column=0, sticky="w", pady=(10, 0))
+            row=7, column=0, sticky="w", pady=(10, 0))
         self.log_box = ctk.CTkTextbox(frame, height=150, width=600)
-        self.log_box.grid(row=7, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        self.log_box.grid(row=8, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
 
     def get_unique_output_path(self, base_path):
         """Generate a unique output filename by adding incremental counters"""
@@ -140,8 +160,11 @@ class DualSubtitleApp:
     def complete_process(self):
         """Process both tracks and generate subtitled video"""
         input_file = self.file_entry.get()
-        model_path = "local_modals/vosk-model-en-us-0.42-gigaspeech"
-        device = "cpu"
+        
+        # Get selected model and device from UI
+        model_path = self.model_var.get()  # Whisper model size
+        device = self.device_var.get()     # CPU or CUDA
+        
         include_timecodes = self.timecodes_var.get()
         selected_language = "English"
         
@@ -154,7 +177,7 @@ class DualSubtitleApp:
             messagebox.showerror("Error", "Please select an output file.")
             return
 
-        self.log("Starting complete process: dual track transcription and subtitle embedding...")
+        self.log(f"Starting complete process with Whisper {model_path} model on {device}...")
         
         # Create output directory if it doesn't exist
         output_dir = os.path.dirname(output_file)
@@ -165,6 +188,8 @@ class DualSubtitleApp:
             except Exception as e:
                 self.log(f"ERROR creating output directory: {e}")
                 return
+        
+        # Rest of the method remains the same...
         
         # Step 1: Transcribe both audio tracks
         with tempfile.TemporaryDirectory() as temp_dir:
