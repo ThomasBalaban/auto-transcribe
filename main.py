@@ -8,7 +8,6 @@ import traceback
 from tkinter import filedialog, messagebox
 from transcriber import transcribe_audio, convert_to_audio, write_transcriptions_to_file
 from embedder import convert_to_srt, embed_dual_subtitles
-from intro_title import add_intro_title  # Updated import for intro title
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -59,11 +58,6 @@ class DualSubtitleApp:
         self.output_entry = ctk.CTkEntry(frame, width=400)
         self.output_entry.grid(row=1, column=1, padx=5, pady=5)
         ctk.CTkButton(frame, text="Browse", command=self.browse_output).grid(row=1, column=2, padx=5, pady=5)
-        
-        # Intro title input
-        ctk.CTkLabel(frame, text="Intro Title (optional):").grid(row=2, column=0, sticky="w", pady=5)
-        self.title_entry = ctk.CTkEntry(frame, width=400)
-        self.title_entry.grid(row=2, column=1, padx=5, pady=5)
         
         # Add model selection dropdown
         ctk.CTkLabel(frame, text="Whisper Model:").grid(row=3, column=0, sticky="w", pady=5)
@@ -298,35 +292,8 @@ class DualSubtitleApp:
             self.log("\nEmbedding both subtitle tracks into video...")
             
             try:
-                # Get intro title text
-                intro_title = self.title_entry.get().strip()
-                
-                # For regular output without intro title
-                if not intro_title:
-                    # Just embed the subtitles and we're done
-                    embed_dual_subtitles(input_file, output_file, track2_srt_path, track3_srt_path, self.log)
-                    self.log("Complete process finished successfully!")
-                else:
-                    # For output with intro title
-                    # First create a temporary file with subtitles
-                    temp_subtitled_file = os.path.join(temp_dir, "temp_subtitled.mp4")
-                    
-                    # Embed subtitles into temporary file
-                    embed_dual_subtitles(input_file, temp_subtitled_file, track2_srt_path, track3_srt_path, self.log)
-                    
-                    # Now add the intro title overlay
-                    self.log(f"\nAdding intro title overlay: '{intro_title}'")
-                    success = add_intro_title(temp_subtitled_file, output_file, intro_title, 5.0, self.log)
-                    
-                    if success:
-                        self.log("Intro title overlay added successfully!")
-                        self.log("Complete process finished successfully!")
-                    else:
-                        self.log("WARNING: Failed to add intro title overlay to video.")
-                        # If title overlay failed, just use the subtitled version
-                        import shutil
-                        shutil.copy(temp_subtitled_file, output_file)
-                        self.log("Used subtitled version without intro title as final output.")
+                embed_dual_subtitles(input_file, output_file, track2_srt_path, track3_srt_path, self.log)
+                self.log("Complete process finished successfully!")
                 
             except Exception as e:
                 self.log(f"ERROR during processing: {str(e)}")
