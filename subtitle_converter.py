@@ -1,6 +1,5 @@
 import os
 import re
-
 from video_utils import get_video_duration
 
 def format_time(seconds):
@@ -12,8 +11,10 @@ def format_time(seconds):
     seconds = seconds % 60
     return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
+
+
 def convert_to_srt(input_text, output_file, video_file, log, is_mic_track=False):
-    """Convert text to SRT format preserving original timestamps"""
+    """Convert text to SRT format preserving original timestamps with fixes for overlaps"""
     log(f"Converting transcription to SRT format with original timing: {output_file}")
     video_duration = get_video_duration(video_file, log)
     log(f"Input text for SRT conversion: {input_text[:200]}...")
@@ -50,9 +51,34 @@ def convert_to_srt(input_text, output_file, video_file, log, is_mic_track=False)
     # Sort segments by start time
     subtitle_segments.sort(key=lambda x: x[0])
     
+    # Fix overlapping segments
+    fixed_segments = []
+    if subtitle_segments:
+        fixed_segments.append(subtitle_segments[0])  # Add the first segment
+        
+        for i in range(1, len(subtitle_segments)):
+            prev_start, prev_end, prev_text = fixed_segments[-1]
+            curr_start, curr_end, curr_text = subtitle_segments[i]
+            
+            # Ensure minimum duration (100ms)
+            min_duration = 0.1
+            if curr_end - curr_start < min_duration:
+                curr_end = curr_start + min_duration
+            
+            # Fix overlap
+            if curr_start < prev_end:
+                # Set current start time to previous end time plus small buffer
+                curr_start = prev_end + 0.01  # Add 10ms buffer
+                
+                # Make sure duration is still reasonable
+                if curr_end < curr_start + min_duration:
+                    curr_end = curr_start + min_duration
+            
+            fixed_segments.append((curr_start, curr_end, curr_text))
+    
     # Write SRT file without any timing adjustments
     with open(output_file, 'w', encoding='utf-8') as srt_file:
-        for i, (start_time, end_time, text) in enumerate(subtitle_segments, 1):
+        for i, (start_time, end_time, text) in enumerate(fixed_segments, 1):
             start_formatted = format_time(start_time)
             end_formatted = format_time(end_time)
             
@@ -60,7 +86,7 @@ def convert_to_srt(input_text, output_file, video_file, log, is_mic_track=False)
             srt_file.write(f"{start_formatted} --> {end_formatted}\n")
             srt_file.write(f"{text}\n\n")
 
-    log(f"Conversion to {output_file} completed with {len(subtitle_segments)} subtitle segments")
+    log(f"Conversion to {output_file} completed with {len(fixed_segments)} subtitle segments")
     
     try:
         with open(output_file, 'r', encoding='utf-8') as f:
