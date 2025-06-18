@@ -7,7 +7,7 @@ that can be applied when embedding subtitles into videos.
 class MicrophoneStyle:
     """Style for Track 2 (Microphone) - Teal text with darker gray stroke, using BubbleGum font"""
     FONT_NAME = "BubbleGum"
-    FONT_SIZE = 14
+    FONT_SIZE = 20
     PRIMARY_COLOR = "&H00d2ff00"  # Teal color
     OUTLINE_COLOR = "&H00171717"  # Dark gray
     BACKGROUND_COLOR = "&H00000000"  # Transparent
@@ -17,7 +17,7 @@ class MicrophoneStyle:
     OUTLINE = 3
     SHADOW = 1
     ALIGNMENT = 2  # Bottom-center alignment
-    MARGIN_V = 70  # Higher value = higher position from bottom
+    MARGIN_V = 100  # Higher value = higher position from bottom
     MARGIN_L = 40  # Left margin
     MARGIN_R = 40  # Right margin
     
@@ -35,9 +35,9 @@ class MicrophoneStyle:
 
 class DesktopStyle:
     """Style for Track 3 (Desktop) - positioned below mic subtitles"""
-    FONT_NAME = "TT Rounds Neue Trial"
-    FONT_SIZE = 13
-    PRIMARY_COLOR = "&H0091e1fe"
+    FONT_NAME = "Bold Marker"
+    FONT_SIZE = 16
+    PRIMARY_COLOR = "&H00FFFFFF"
     OUTLINE_COLOR = "&H00171717"
     BACKGROUND_COLOR = "&HFFFFFFFF"
     BOLD = 1
@@ -46,7 +46,7 @@ class DesktopStyle:
     OUTLINE = 2
     SHADOW = 1
     ALIGNMENT = 2  # Bottom-center
-    MARGIN_V = 55  # Lower value = lower position (below mic track)
+    MARGIN_V = 80  # Lower value = lower position (below mic track)
     MARGIN_L = 40  # Left margin
     MARGIN_R = 40  # Right margin
     
