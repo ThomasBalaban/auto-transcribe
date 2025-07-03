@@ -6,6 +6,7 @@ import sys
 import numpy as np  # type: ignore
 import whisperx # type: ignore
 from faster_whisper import WhisperModel  # type: ignore
+from timestamp_processor import apply_duration_adjustments, fix_overlapping_timestamps
 
 # Try importing WhisperX components with explicit error handling
 try:
@@ -124,14 +125,6 @@ def should_filter_word(word):
         return True
     return False
 
-
-
-
-
-
-
-
-
 def align_with_whisperx(audio_path, segments_list, device="cpu", language_code="en"):
     """Align segments with WhisperX for improved word-level timestamps"""
     if not WHISPERX_AVAILABLE:
@@ -188,73 +181,6 @@ def align_with_whisperx(audio_path, segments_list, device="cpu", language_code="
         import traceback
         log(f"WhisperX traceback: {traceback.format_exc()}")
         return None
-    
-
-
-
-def fix_overlapping_timestamps(transcriptions, min_duration=0.1):
-    """
-    Fix overlapping timestamps in transcriptions to ensure smooth subtitle display.
-    Each entry in transcriptions should be in format: "start-end: text"
-    
-    Args:
-        transcriptions: List of transcription lines with timestamps
-        min_duration: Minimum duration for each word in seconds
-        
-    Returns:
-        List of transcriptions with fixed timestamps
-    """
-    if not transcriptions:
-        return []
-        
-    # Parse the timestamps and text
-    parsed = []
-    for line in transcriptions:
-        try:
-            time_part, text = line.split(':', 1)
-            start_str, end_str = time_part.split('-')
-            start = float(start_str)
-            end = float(end_str)
-            parsed.append((start, end, text.strip()))
-        except ValueError:
-            # Skip lines that don't have the expected format
-            continue
-    
-    # Sort by start time
-    parsed.sort(key=lambda x: x[0])
-    
-    # Fix overlapping timestamps
-    fixed = []
-    if parsed:
-        fixed.append(parsed[0])  # Add the first item
-        
-        for i in range(1, len(parsed)):
-            prev_start, prev_end, prev_text = fixed[-1]
-            curr_start, curr_end, curr_text = parsed[i]
-            
-            # Ensure minimum duration
-            if curr_end - curr_start < min_duration:
-                curr_end = curr_start + min_duration
-            
-            # Fix overlap
-            if curr_start < prev_end:
-                # Set current start time to previous end time
-                curr_start = prev_end
-                
-                # Make sure duration is still reasonable
-                if curr_end < curr_start + min_duration:
-                    curr_end = curr_start + min_duration
-            
-            fixed.append((curr_start, curr_end, curr_text))
-    
-    # Convert back to the original format
-    result = []
-    for start, end, text in fixed:
-        result.append(f"{start:.2f}-{end:.2f}: {text}")
-    
-    return result
-
-
 
 def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func, language, track_name=""):
     try:
@@ -411,7 +337,12 @@ def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func
         log_func(f"Transcription for {track_name} took {time.time() - start_time:.2f} seconds.")
         log_func(f"ALIGNMENT METHOD FOR {track_name}: {'WhisperX' if use_whisperx else 'Standard Whisper'}")
         
-         # Fix overlapping timestamps to prevent subtitle display issues
+        # Apply duration adjustments BEFORE fixing overlaps
+        if include_timecodes and transcriptions:
+            log_func(f"Applying word duration adjustments for {track_name}...")
+            transcriptions = apply_duration_adjustments(transcriptions, track_name, log_func)
+        
+        # Fix overlapping timestamps to prevent subtitle display issues
         if include_timecodes and transcriptions:
             log_func(f"Fixing overlapping timestamps for {track_name}...")
             original_count = len(transcriptions)
@@ -423,10 +354,6 @@ def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func
     except Exception as e:
         log_func(f"Error in transcription process: {e}")
         return [f"0.0-5.0: Transcription error: {str(e)}"]
-
-
-
-
 
 def write_transcriptions_to_file(transcriptions, output_file):
     """Writes transcriptions to a file"""
