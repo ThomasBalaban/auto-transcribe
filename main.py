@@ -50,6 +50,7 @@ class DualSubtitleApp:
             # Schedule to run again after 100ms
             self.root.after(100, self.process_log_messages)
 
+    
     def setup_ui(self):
         """Create and arrange all UI elements"""
         # Create a main scrollable frame that will contain everything
@@ -131,6 +132,15 @@ class DualSubtitleApp:
         )
         device_dropdown.pack(side="left", padx=5, pady=5)
         
+        # Add WhisperX check button
+        whisperx_check_button = ctk.CTkButton(
+            model_frame,
+            text="Check WhisperX",
+            command=self.check_whisperx_availability,
+            width=120
+        )
+        whisperx_check_button.pack(side="left", padx=(20, 5), pady=5)
+        
         # Progress frame
         progress_frame = ctk.CTkFrame(frame)
         progress_frame.pack(fill="x", padx=5, pady=5)
@@ -161,6 +171,174 @@ class DualSubtitleApp:
         ctk.CTkLabel(frame, text="Processing Log:").pack(anchor="w", pady=(10, 0))
         self.log_box = ctk.CTkTextbox(frame, height=450, width=600)
         self.log_box.pack(fill="both", expand=True, padx=5, pady=5)
+
+    def check_whisperx_availability(self):
+        """Check if WhisperX is available and display detailed status"""
+        try:
+            # Clear previous log messages for this check
+            self.log("="*50)
+            self.log("CHECKING WHISPERX AVAILABILITY...")
+            self.log("="*50)
+            
+            # Check if WhisperX can be imported
+            try:
+                import whisperx # type: ignore
+                self.log("✓ WhisperX module found and imported successfully")
+                whisperx_available = True
+            except ImportError as e:
+                self.log(f"✗ WhisperX module import failed: {e}")
+                whisperx_available = False
+            
+            # Check specific components if main import worked
+            if whisperx_available:
+                try:
+                    from whisperx import load_align_model, align # type: ignore
+                    self.log("✓ WhisperX alignment functions available")
+                    components_available = True
+                except ImportError as e:
+                    self.log(f"✗ WhisperX alignment components missing: {e}")
+                    components_available = False
+            else:
+                components_available = False
+            
+            # Check PyTorch (required for WhisperX)
+            try:
+                import torch # type: ignore
+                self.log(f"✓ PyTorch found (version: {torch.__version__})")
+                
+                # Check CUDA availability if using CUDA device
+                if self.device_var.get() == "cuda":
+                    if torch.cuda.is_available():
+                        self.log(f"✓ CUDA available (devices: {torch.cuda.device_count()})")
+                        if torch.cuda.device_count() > 0:
+                            cuda_info = f"Current device: {torch.cuda.get_device_name(0)}"
+                            self.log(f"  {cuda_info}")
+                    else:
+                        self.log("⚠ CUDA not available (will fall back to CPU)")
+            except ImportError:
+                self.log("✗ PyTorch not found (required for WhisperX)")
+            
+            # Check other dependencies
+            try:
+                import faster_whisper # type: ignore
+                self.log("✓ Faster-Whisper available")
+            except ImportError:
+                self.log("✗ Faster-Whisper not found")
+            
+            # Overall status summary
+            self.log("-" * 30)
+            if whisperx_available and components_available:
+                self.log("🎉 WHISPERX STATUS: FULLY AVAILABLE")
+                self.log("   Your transcriptions will use improved WhisperX alignment")
+                messagebox.showinfo(
+                    "WhisperX Status", 
+                    "✓ WhisperX is fully available!\n\nYour transcriptions will use improved word-level alignment for better subtitle timing."
+                )
+            elif whisperx_available:
+                self.log("⚠ WHISPERX STATUS: PARTIALLY AVAILABLE")
+                self.log("   Some components missing - will fall back to standard Whisper")
+                messagebox.showwarning(
+                    "WhisperX Status", 
+                    "⚠ WhisperX is partially available.\n\nSome components are missing. The app will use standard Whisper timestamps instead."
+                )
+            else:
+                self.log("❌ WHISPERX STATUS: NOT AVAILABLE")
+                self.log("   Will use standard Whisper timestamps only")
+                messagebox.showwarning(
+                    "WhisperX Status", 
+                    "❌ WhisperX is not available.\n\nThe app will work fine but will use standard Whisper timestamps. For better accuracy, consider installing WhisperX:\n\npip install whisperx"
+                )
+            
+            self.log("="*50)
+            
+        except Exception as e:
+            error_msg = f"Error checking WhisperX availability: {e}"
+            self.log(error_msg)
+            messagebox.showerror("Check Error", error_msg)
+
+
+    def check_whisperx_availability(self):
+        """Check if WhisperX is available and display detailed status"""
+        try:
+            # Clear previous log messages for this check
+            self.log("="*50)
+            self.log("CHECKING WHISPERX AVAILABILITY...")
+            self.log("="*50)
+            
+            # Check if WhisperX can be imported
+            try:
+                import whisperx # type: ignore
+                self.log("✓ WhisperX module found and imported successfully")
+                whisperx_available = True
+            except ImportError as e:
+                self.log(f"✗ WhisperX module import failed: {e}")
+                whisperx_available = False
+            
+            # Check specific components if main import worked
+            if whisperx_available:
+                try:
+                    from whisperx import load_align_model, align # type: ignore
+                    self.log("✓ WhisperX alignment functions available")
+                    components_available = True
+                except ImportError as e:
+                    self.log(f"✗ WhisperX alignment components missing: {e}")
+                    components_available = False
+            else:
+                components_available = False
+            
+            # Check PyTorch (required for WhisperX)
+            try:
+                import torch # type: ignore
+                self.log(f"✓ PyTorch found (version: {torch.__version__})")
+                
+                # Check CUDA availability if using CUDA device
+                if self.device_var.get() == "cuda":
+                    if torch.cuda.is_available():
+                        self.log(f"✓ CUDA available (devices: {torch.cuda.device_count()})")
+                        cuda_info = f"Current device: {torch.cuda.get_device_name(0)}"
+                        self.log(f"  {cuda_info}")
+                    else:
+                        self.log("⚠ CUDA not available (will fall back to CPU)")
+            except ImportError:
+                self.log("✗ PyTorch not found (required for WhisperX)")
+            
+            # Check other dependencies
+            try:
+                import faster_whisper # type: ignore
+                self.log("✓ Faster-Whisper available")
+            except ImportError:
+                self.log("✗ Faster-Whisper not found")
+            
+            # Overall status summary
+            self.log("-" * 30)
+            if whisperx_available and components_available:
+                self.log("🎉 WHISPERX STATUS: FULLY AVAILABLE")
+                self.log("   Your transcriptions will use improved WhisperX alignment")
+                messagebox.showinfo(
+                    "WhisperX Status", 
+                    "✓ WhisperX is fully available!\n\nYour transcriptions will use improved word-level alignment for better subtitle timing."
+                )
+            elif whisperx_available:
+                self.log("⚠ WHISPERX STATUS: PARTIALLY AVAILABLE")
+                self.log("   Some components missing - will fall back to standard Whisper")
+                messagebox.showwarning(
+                    "WhisperX Status", 
+                    "⚠ WhisperX is partially available.\n\nSome components are missing. The app will use standard Whisper timestamps instead."
+                )
+            else:
+                self.log("❌ WHISPERX STATUS: NOT AVAILABLE")
+                self.log("   Will use standard Whisper timestamps only")
+                messagebox.showwarning(
+                    "WhisperX Status", 
+                    "❌ WhisperX is not available.\n\nThe app will work fine but will use standard Whisper timestamps. For better accuracy, consider installing WhisperX:\n\npip install whisperx"
+                )
+            
+            self.log("="*50)
+            
+        except Exception as e:
+            error_msg = f"Error checking WhisperX availability: {e}"
+            self.log(error_msg)
+            messagebox.showerror("Check Error", error_msg)
 
     def add_files(self):
         """Add multiple files to the list"""
