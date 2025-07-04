@@ -7,7 +7,7 @@ import customtkinter as ctk  # type: ignore
 import traceback
 from tkinter import filedialog, messagebox
 from transcriber import transcribe_audio, convert_to_audio, write_transcriptions_to_file
-from embedder import convert_to_srt, embed_dual_subtitles
+from embedder import convert_to_srt, embed_dual_subtitles, embed_single_subtitles
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -213,90 +213,6 @@ class DualSubtitleApp:
                         if torch.cuda.device_count() > 0:
                             cuda_info = f"Current device: {torch.cuda.get_device_name(0)}"
                             self.log(f"  {cuda_info}")
-                    else:
-                        self.log("⚠ CUDA not available (will fall back to CPU)")
-            except ImportError:
-                self.log("✗ PyTorch not found (required for WhisperX)")
-            
-            # Check other dependencies
-            try:
-                import faster_whisper # type: ignore
-                self.log("✓ Faster-Whisper available")
-            except ImportError:
-                self.log("✗ Faster-Whisper not found")
-            
-            # Overall status summary
-            self.log("-" * 30)
-            if whisperx_available and components_available:
-                self.log("🎉 WHISPERX STATUS: FULLY AVAILABLE")
-                self.log("   Your transcriptions will use improved WhisperX alignment")
-                messagebox.showinfo(
-                    "WhisperX Status", 
-                    "✓ WhisperX is fully available!\n\nYour transcriptions will use improved word-level alignment for better subtitle timing."
-                )
-            elif whisperx_available:
-                self.log("⚠ WHISPERX STATUS: PARTIALLY AVAILABLE")
-                self.log("   Some components missing - will fall back to standard Whisper")
-                messagebox.showwarning(
-                    "WhisperX Status", 
-                    "⚠ WhisperX is partially available.\n\nSome components are missing. The app will use standard Whisper timestamps instead."
-                )
-            else:
-                self.log("❌ WHISPERX STATUS: NOT AVAILABLE")
-                self.log("   Will use standard Whisper timestamps only")
-                messagebox.showwarning(
-                    "WhisperX Status", 
-                    "❌ WhisperX is not available.\n\nThe app will work fine but will use standard Whisper timestamps. For better accuracy, consider installing WhisperX:\n\npip install whisperx"
-                )
-            
-            self.log("="*50)
-            
-        except Exception as e:
-            error_msg = f"Error checking WhisperX availability: {e}"
-            self.log(error_msg)
-            messagebox.showerror("Check Error", error_msg)
-
-
-    def check_whisperx_availability(self):
-        """Check if WhisperX is available and display detailed status"""
-        try:
-            # Clear previous log messages for this check
-            self.log("="*50)
-            self.log("CHECKING WHISPERX AVAILABILITY...")
-            self.log("="*50)
-            
-            # Check if WhisperX can be imported
-            try:
-                import whisperx # type: ignore
-                self.log("✓ WhisperX module found and imported successfully")
-                whisperx_available = True
-            except ImportError as e:
-                self.log(f"✗ WhisperX module import failed: {e}")
-                whisperx_available = False
-            
-            # Check specific components if main import worked
-            if whisperx_available:
-                try:
-                    from whisperx import load_align_model, align # type: ignore
-                    self.log("✓ WhisperX alignment functions available")
-                    components_available = True
-                except ImportError as e:
-                    self.log(f"✗ WhisperX alignment components missing: {e}")
-                    components_available = False
-            else:
-                components_available = False
-            
-            # Check PyTorch (required for WhisperX)
-            try:
-                import torch # type: ignore
-                self.log(f"✓ PyTorch found (version: {torch.__version__})")
-                
-                # Check CUDA availability if using CUDA device
-                if self.device_var.get() == "cuda":
-                    if torch.cuda.is_available():
-                        self.log(f"✓ CUDA available (devices: {torch.cuda.device_count()})")
-                        cuda_info = f"Current device: {torch.cuda.get_device_name(0)}"
-                        self.log(f"  {cuda_info}")
                     else:
                         self.log("⚠ CUDA not available (will fall back to CPU)")
             except ImportError:
@@ -595,7 +511,26 @@ class DualSubtitleApp:
             self.processing_active = False
             self.current_process_index = -1
 
-
+    def has_meaningful_speech(self, transcriptions):
+        """Check if transcriptions contain meaningful speech (not just silence/errors)"""
+        if not transcriptions:
+            return False
+        
+        # Filter out error messages and empty content
+        meaningful_lines = []
+        for line in transcriptions:
+            if ":" in line:
+                # Extract text part after timestamp
+                text_part = line.split(":", 1)[1].strip()
+                # Skip error messages and empty content
+                if (not text_part or 
+                    "Audio file not found" in text_part or
+                    "Audio file is empty" in text_part or
+                    "Transcription error" in text_part):
+                    continue
+                meaningful_lines.append(text_part)
+        
+        return len(meaningful_lines) > 0
 
     def process_single_video(self, input_file, output_file):
         """Process a single video file"""
@@ -637,18 +572,22 @@ class DualSubtitleApp:
             track2_transcriptions = transcribe_audio(model_path, device, track2_audio_path, include_timecodes, self.log, selected_language, "Track 2 (Mic)")
             
             self.log(f"Track 2 transcription complete. Got {len(track2_transcriptions)} lines.")
-            # Debug: Show first few lines of transcription
-            if track2_transcriptions:
+            
+            # Check if Track 2 has meaningful speech
+            track2_has_speech = self.has_meaningful_speech(track2_transcriptions)
+            if track2_has_speech:
+                self.log("Track 2 contains meaningful speech - will create subtitles")
+                # Debug: Show first few lines of transcription
                 for i, line in enumerate(track2_transcriptions[:3]):
                     self.log(f"Track 2 transcription line {i+1}: {line}")
+                    
+                # Convert Track 2 transcriptions to SRT
+                self.log("Converting Track 2 transcriptions to SRT format...")
+                track2_text = "\n".join(track2_transcriptions)
+                convert_to_srt(track2_text, track2_srt_path, input_file, self.log, is_mic_track=True)
             else:
-                self.log("WARNING: No transcriptions were generated for Track 2")
-                track2_transcriptions = ["0.0-5.0: No speech detected in Track 2"]
-                
-            # Convert Track 2 transcriptions to SRT
-            self.log("Converting Track 2 transcriptions to SRT format...")
-            track2_text = "\n".join(track2_transcriptions)
-            convert_to_srt(track2_text, track2_srt_path, input_file, self.log, is_mic_track=True)
+                self.log("Track 2 has no meaningful speech - skipping subtitle creation")
+                track2_srt_path = None
                 
             # Process Track 3 (Desktop)
             self.log("\nPROCESSING TRACK 3 (DESKTOP):")
@@ -671,30 +610,58 @@ class DualSubtitleApp:
             track3_transcriptions = transcribe_audio(model_path, device, track3_audio_path, include_timecodes, self.log, selected_language, "Track 3 (Desktop)")
             
             self.log(f"Track 3 transcription complete. Got {len(track3_transcriptions)} lines.")
-            # Debug: Show first few lines of transcription
-            if track3_transcriptions:
+            
+            # Check if Track 3 has meaningful speech
+            track3_has_speech = self.has_meaningful_speech(track3_transcriptions)
+            if track3_has_speech:
+                self.log("Track 3 contains meaningful speech - will create subtitles")
+                # Debug: Show first few lines of transcription
                 for i, line in enumerate(track3_transcriptions[:3]):
                     self.log(f"Track 3 transcription line {i+1}: {line}")
+                    
+                # Convert Track 3 transcriptions to SRT
+                self.log("Converting Track 3 transcriptions to SRT format...")
+                track3_text = "\n".join(track3_transcriptions)
+                convert_to_srt(track3_text, track3_srt_path, input_file, self.log, is_mic_track=False)
             else:
-                self.log("WARNING: No transcriptions were generated for Track 3")
-                track3_transcriptions = ["0.0-5.0: No speech detected in Track 3"]
-                
-            # Convert Track 3 transcriptions to SRT
-            self.log("Converting Track 3 transcriptions to SRT format...")
-            track3_text = "\n".join(track3_transcriptions)
-            convert_to_srt(track3_text, track3_srt_path, input_file, self.log, is_mic_track=False)
+                self.log("Track 3 has no meaningful speech - skipping subtitle creation")
+                track3_srt_path = None
             
-            # Step 2: Embed both subtitle tracks
-            self.log("\nEmbedding both subtitle tracks into video...")
+            # Step 2: Embed subtitle tracks based on what we have
+            if track2_srt_path and track3_srt_path:
+                self.log("\nEmbedding both subtitle tracks into video...")
+                try:
+                    embed_dual_subtitles(input_file, output_file, track2_srt_path, track3_srt_path, self.log)
+                    self.log(f"Video processing completed successfully with dual subtitles: {os.path.basename(output_file)}")
+                except Exception as e:
+                    self.log(f"ERROR during dual embedding: {str(e)}")
+                    raise Exception(f"Failed to embed dual subtitles: {e}")
             
-            try:
-                embed_dual_subtitles(input_file, output_file, track2_srt_path, track3_srt_path, self.log)
-                self.log(f"Video processing completed successfully: {os.path.basename(output_file)}")
+            elif track2_srt_path or track3_srt_path:
+                # Only one track has speech
+                single_srt_path = track2_srt_path or track3_srt_path
+                track_name = "Track 2 (Microphone)" if track2_srt_path else "Track 3 (Desktop)"
+                is_mic_track = track2_srt_path is not None
                 
-            except Exception as e:
-                self.log(f"ERROR during embedding: {str(e)}")
-                self.log(traceback.format_exc())
-                raise Exception(f"Failed to embed subtitles: {e}")
+                self.log(f"\nEmbedding single subtitle track ({track_name}) into video...")
+                try:
+                    embed_single_subtitles(input_file, output_file, single_srt_path, self.log, is_mic_track)
+                    self.log(f"Video processing completed successfully with single subtitle track: {os.path.basename(output_file)}")
+                except Exception as e:
+                    self.log(f"ERROR during single track embedding: {str(e)}")
+                    raise Exception(f"Failed to embed single subtitle track: {e}")
+            
+            else:
+                # No tracks have meaningful speech
+                self.log("\nNo meaningful speech detected in either track - copying video without subtitles...")
+                try:
+                    # Just copy the video without adding subtitles
+                    import shutil
+                    shutil.copy2(input_file, output_file)
+                    self.log(f"Video copied without subtitles: {os.path.basename(output_file)}")
+                except Exception as e:
+                    self.log(f"ERROR during video copy: {str(e)}")
+                    raise Exception(f"Failed to copy video: {e}")
 
 
 # Initialize the application
