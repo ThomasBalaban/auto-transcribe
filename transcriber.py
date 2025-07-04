@@ -7,6 +7,7 @@ import numpy as np  # type: ignore
 import whisperx # type: ignore
 from faster_whisper import WhisperModel  # type: ignore
 from timestamp_processor import apply_duration_adjustments, fix_overlapping_timestamps
+from hallucination_filter import filter_hallucinations, filter_hallucinations_with_whisperx_data
 
 # Try importing WhisperX components with explicit error handling
 try:
@@ -265,6 +266,13 @@ def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func
                 
                 if aligned_segments:
                     log_func(f"Using WhisperX aligned segments for better timing for {track_name}")
+                    
+                    # Filter hallucinations from WhisperX segments (has confidence data)
+                    log_func(f"Filtering hallucinations from WhisperX segments for {track_name}...")
+                    aligned_segments = filter_hallucinations_with_whisperx_data(
+                        aligned_segments, audio_path, track_name, log_func
+                    )
+                    
                     use_whisperx = True
                 else:
                     log_func(f"WhisperX alignment failed for {track_name}, using original Whisper timestamps")
@@ -337,7 +345,12 @@ def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func
         log_func(f"Transcription for {track_name} took {time.time() - start_time:.2f} seconds.")
         log_func(f"ALIGNMENT METHOD FOR {track_name}: {'WhisperX' if use_whisperx else 'Standard Whisper'}")
         
-        # Apply duration adjustments BEFORE fixing overlaps
+        # Apply hallucination filtering for standard Whisper (WhisperX already filtered above)
+        if include_timecodes and transcriptions and not use_whisperx:
+            log_func(f"Filtering hallucinations for standard Whisper transcription of {track_name}...")
+            transcriptions = filter_hallucinations(transcriptions, audio_path, track_name, log_func)
+        
+        # Apply duration adjustments AFTER hallucination filtering
         if include_timecodes and transcriptions:
             log_func(f"Applying word duration adjustments for {track_name}...")
             transcriptions = apply_duration_adjustments(transcriptions, track_name, log_func)
