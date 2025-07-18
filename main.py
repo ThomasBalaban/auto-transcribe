@@ -258,8 +258,8 @@ class DualSubtitleApp:
 
     def add_files(self):
         """Add multiple files to the list"""
-        if len(self.input_files) >= 10:
-            messagebox.showwarning("Maximum Files Reached", "You can only process up to 10 files at once.")
+        if len(self.input_files) >= 15:
+            messagebox.showwarning("Maximum Files Reached", "You can only process up to 15 files at once.")
             return
             
         file_paths = filedialog.askopenfilenames(
@@ -270,8 +270,8 @@ class DualSubtitleApp:
             return
             
         # Check if adding these would exceed the limit
-        if len(self.input_files) + len(file_paths) > 10:
-            remaining = 10 - len(self.input_files)
+        if len(self.input_files) + len(file_paths) > 15:
+            remaining = 15 - len(self.input_files)
             messagebox.showwarning(
                 "Maximum Files Reached", 
                 f"You can only add {remaining} more file(s). Only the first {remaining} selected files will be added."
