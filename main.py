@@ -1,13 +1,14 @@
 import os
 import threading
 import tempfile
-import time
 import queue
 import customtkinter as ctk  # type: ignore
 import traceback
 from tkinter import filedialog, messagebox
-from transcriber import transcribe_audio, convert_to_audio, write_transcriptions_to_file
-from embedder import convert_to_srt, embed_dual_subtitles, embed_single_subtitles
+from transcriber import transcribe_audio, convert_to_audio
+from embedder import convert_to_srt
+from onomatopoeia_detector import create_onomatopoeia_srt, OnomatopoeiaDetector
+from subtitle_embedder import embed_subtitles
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -141,6 +142,29 @@ class DualSubtitleApp:
         )
         whisperx_check_button.pack(side="left", padx=(20, 5), pady=5)
         
+        # Onomatopoeia options frame
+        onomatopoeia_frame = ctk.CTkFrame(frame)
+        onomatopoeia_frame.pack(fill="x", padx=5, pady=5)
+        
+        # Onomatopoeia confidence threshold
+        ctk.CTkLabel(onomatopoeia_frame, text="Sound Effects Confidence:").pack(side="left", padx=5, pady=5)
+        self.confidence_var = ctk.StringVar(value="0.5")
+        confidence_dropdown = ctk.CTkOptionMenu(
+            onomatopoeia_frame,
+            values=["0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9"],
+            variable=self.confidence_var
+        )
+        confidence_dropdown.pack(side="left", padx=5, pady=5)
+        
+        # Test onomatopoeia button
+        test_onomatopoeia_button = ctk.CTkButton(
+            onomatopoeia_frame,
+            text="Test Sound Detection",
+            command=self.test_onomatopoeia,
+            width=140
+        )
+        test_onomatopoeia_button.pack(side="left", padx=(20, 5), pady=5)
+        
         # Progress frame
         progress_frame = ctk.CTkFrame(frame)
         progress_frame.pack(fill="x", padx=5, pady=5)
@@ -255,6 +279,70 @@ class DualSubtitleApp:
             error_msg = f"Error checking WhisperX availability: {e}"
             self.log(error_msg)
             messagebox.showerror("Check Error", error_msg)
+
+    def test_onomatopoeia(self):
+        """Test onomatopoeia detection system"""
+        try:
+            self.log("="*50)
+            self.log("TESTING ONOMATOPOEIA DETECTION SYSTEM...")
+            self.log("="*50)
+            
+            # Check if TensorFlow is available
+            try:
+                import tensorflow as tf # type: ignore
+                self.log(f"✓ TensorFlow found (version: {tf.__version__})")
+            except ImportError:
+                self.log("✗ TensorFlow not found (required for YAMNet)")
+                messagebox.showerror("Missing Dependency", "TensorFlow is required for onomatopoeia detection. Please install it:\n\npip install tensorflow")
+                return
+            
+            # Check if TensorFlow Hub is available
+            try:
+                import tensorflow_hub as hub # type: ignore
+                self.log(f"✓ TensorFlow Hub found")
+            except ImportError:
+                self.log("✗ TensorFlow Hub not found (required for YAMNet)")
+                messagebox.showerror("Missing Dependency", "TensorFlow Hub is required for onomatopoeia detection. Please install it:\n\npip install tensorflow-hub")
+                return
+            
+            # Test YAMNet model loading
+            confidence = float(self.confidence_var.get())
+            detector = OnomatopoeiaDetector(confidence_threshold=confidence, log_func=self.log)
+            
+            if detector.yamnet_model is None:
+                self.log("❌ ONOMATOPOEIA STATUS: NOT AVAILABLE")
+                self.log("   YAMNet model failed to load")
+                messagebox.showerror(
+                    "Onomatopoeia Test Failed",
+                    "❌ YAMNet model could not be loaded.\n\nThis may be due to network issues or missing dependencies. Check the log for details."
+                )
+            else:
+                self.log("🎉 ONOMATOPOEIA STATUS: FULLY AVAILABLE")
+                self.log(f"   YAMNet model loaded successfully with {len(detector.class_names)} sound classes")
+                self.log(f"   Confidence threshold set to: {confidence}")
+                self.log(f"   Available onomatopoeia categories: {len(detector.class_names)}")
+                
+                # Show some example mappings
+                self.log("\nExample sound mappings:")
+                from onomatopoeia_detector import SOUND_MAPPINGS
+                for sound_type, words in list(SOUND_MAPPINGS.items())[:5]:
+                    self.log(f"  {sound_type}: {', '.join(words)}")
+                
+                messagebox.showinfo(
+                    "Onomatopoeia Test Successful",
+                    f"✓ Onomatopoeia detection is fully operational!\n\n"
+                    f"• YAMNet model loaded successfully\n"
+                    f"• {len(detector.class_names)} sound classes available\n"
+                    f"• Confidence threshold: {confidence}\n"
+                    f"• Comic book effects will appear in your videos"
+                )
+            
+            self.log("="*50)
+            
+        except Exception as e:
+            error_msg = f"Error testing onomatopoeia system: {e}"
+            self.log(error_msg)
+            messagebox.showerror("Test Error", error_msg)
 
     def add_files(self):
         """Add multiple files to the list"""
@@ -487,7 +575,6 @@ class DualSubtitleApp:
             else:
                 self.root.after(0, reset_ui)
         
-        # No messagebox display here - it's moved inside reset_ui function
         except Exception as e:
             self.log(f"ERROR during batch processing: {str(e)}")
             self.log(traceback.format_exc())
@@ -504,8 +591,6 @@ class DualSubtitleApp:
                 reset_ui_error()
             else:
                 self.root.after(0, reset_ui_error)
-            
-            # No messagebox display here - it's moved inside reset_ui_error function
         
         finally:
             self.processing_active = False
@@ -533,13 +618,14 @@ class DualSubtitleApp:
         return len(meaningful_lines) > 0
 
     def process_single_video(self, input_file, output_file):
-        """Process a single video file"""
+        """Process a single video file with onomatopoeia detection"""
         # Get selected model and device from UI
         model_path = self.model_var.get()  # Whisper model size
         device = self.device_var.get()     # CPU or CUDA
         
         include_timecodes = self.timecodes_var.get()
         selected_language = "English"
+        confidence_threshold = float(self.confidence_var.get())
         
         # Step 1: Transcribe both audio tracks
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -550,6 +636,7 @@ class DualSubtitleApp:
             track3_audio_path = os.path.join(temp_dir, "track3_audio.wav")
             track2_srt_path = os.path.join(temp_dir, "track2_subtitles.srt")
             track3_srt_path = os.path.join(temp_dir, "track3_subtitles.srt")
+            onomatopoeia_srt_path = os.path.join(temp_dir, "onomatopoeia_subtitles.srt")
             
             # Process Track 2 (Microphone)
             self.log("PROCESSING TRACK 2 (MICROPHONE):")
@@ -627,41 +714,76 @@ class DualSubtitleApp:
                 self.log("Track 3 has no meaningful speech - skipping subtitle creation")
                 track3_srt_path = None
             
-            # Step 2: Embed subtitle tracks based on what we have
-            if track2_srt_path and track3_srt_path:
-                self.log("\nEmbedding both subtitle tracks into video...")
-                try:
-                    embed_dual_subtitles(input_file, output_file, track2_srt_path, track3_srt_path, self.log)
-                    self.log(f"Video processing completed successfully with dual subtitles: {os.path.basename(output_file)}")
-                except Exception as e:
-                    self.log(f"ERROR during dual embedding: {str(e)}")
-                    raise Exception(f"Failed to embed dual subtitles: {e}")
-            
-            elif track2_srt_path or track3_srt_path:
-                # Only one track has speech
-                single_srt_path = track2_srt_path or track3_srt_path
-                track_name = "Track 2 (Microphone)" if track2_srt_path else "Track 3 (Desktop)"
-                is_mic_track = track2_srt_path is not None
+            # Process Onomatopoeia Detection (always enabled)
+            onomatopoeia_events = []
+            if track3_audio_path and os.path.exists(track3_audio_path):
+                self.log("\nPROCESSING ONOMATOPOEIA DETECTION:")
+                self.log("Analyzing desktop audio for comic book sound effects...")
                 
-                self.log(f"\nEmbedding single subtitle track ({track_name}) into video...")
                 try:
-                    embed_single_subtitles(input_file, output_file, single_srt_path, self.log, is_mic_track)
-                    self.log(f"Video processing completed successfully with single subtitle track: {os.path.basename(output_file)}")
+                    success, onomatopoeia_events = create_onomatopoeia_srt(
+                        track3_audio_path, 
+                        onomatopoeia_srt_path, 
+                        self.log
+                    )
+                    
+                    if success and onomatopoeia_events:
+                        self.log(f"Onomatopoeia detection successful: {len(onomatopoeia_events)} sound effects detected")
+                        # Show some examples
+                        for i, event in enumerate(onomatopoeia_events[:3]):
+                            self.log(f"  Effect {i+1}: {event['word']} at {event['start_time']:.1f}s (energy: {event['energy']:.2f})")
+                        
+                        # DEBUG: Check the SRT file content
+                        self.log("\n=== DEBUGGING ONOMATOPOEIA SRT ===")
+                        try:
+                            with open(onomatopoeia_srt_path, 'r', encoding='utf-8') as f:
+                                srt_content = f.read()
+                            self.log(f"SRT file size: {os.path.getsize(onomatopoeia_srt_path)} bytes")
+                            self.log(f"SRT content:\n{srt_content}")
+                            self.log("=== END SRT DEBUG ===\n")
+                        except Exception as e:
+                            self.log(f"Error reading SRT file: {e}")
+                            
+                    else:
+                        self.log("No onomatopoeia detected in desktop audio")
+                        onomatopoeia_srt_path = None
+                        
                 except Exception as e:
-                    self.log(f"ERROR during single track embedding: {str(e)}")
-                    raise Exception(f"Failed to embed single subtitle track: {e}")
-            
+                    self.log(f"WARNING: Onomatopoeia detection failed: {e}")
+                    self.log("Continuing without comic book effects...")
+                    onomatopoeia_srt_path = None
+                    onomatopoeia_events = []
             else:
-                # No tracks have meaningful speech
-                self.log("\nNo meaningful speech detected in either track - copying video without subtitles...")
-                try:
-                    # Just copy the video without adding subtitles
-                    import shutil
-                    shutil.copy2(input_file, output_file)
-                    self.log(f"Video copied without subtitles: {os.path.basename(output_file)}")
-                except Exception as e:
-                    self.log(f"ERROR during video copy: {str(e)}")
-                    raise Exception(f"Failed to copy video: {e}")
+                self.log("Onomatopoeia detection: No desktop audio available")
+                onomatopoeia_srt_path = None
+            
+            # Step 2: Embed subtitle tracks based on what we have
+            self.log("\nEMBEDDING SUBTITLES:")
+            try:
+                embed_subtitles(
+                    input_file, 
+                    output_file, 
+                    track2_srt_path, 
+                    track3_srt_path, 
+                    onomatopoeia_srt_path, 
+                    onomatopoeia_events, 
+                    self.log
+                )
+                
+                # Create success message based on what was embedded
+                subtitle_types = []
+                if track2_srt_path: subtitle_types.append("microphone")
+                if track3_srt_path: subtitle_types.append("desktop")
+                if onomatopoeia_srt_path: subtitle_types.append("comic effects")
+                
+                if subtitle_types:
+                    self.log(f"Video processing completed successfully with {', '.join(subtitle_types)} subtitles: {os.path.basename(output_file)}")
+                else:
+                    self.log(f"Video processing completed (no subtitles added): {os.path.basename(output_file)}")
+                    
+            except Exception as e:
+                self.log(f"ERROR during subtitle embedding: {str(e)}")
+                raise Exception(f"Failed to embed subtitles: {e}")
 
 
 # Initialize the application
