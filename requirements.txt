@@ -1,4 +1,11 @@
 customtkinter
 faster-whisper
-vosk==0.3.44
 ffmpeg-python
+tensorflow
+tensorflow-hub
+librosa
+whisper
+whisperx
+torch
+torchaudio
+numpy
