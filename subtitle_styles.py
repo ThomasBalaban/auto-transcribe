@@ -66,9 +66,9 @@ class DesktopStyle:
 
 class OnomatopoeiaStyle:
     """Style for comic book onomatopoeia - top 1/3 of screen with dynamic sizing and random positioning"""
-    FONT_NAME = "Arial Bold"  # Use a more reliable font
-    BASE_FONT_SIZE = 32   # Base size, will be scaled by energy
-    MAX_FONT_SIZE = 72    # Maximum size for loudest sounds
+    FONT_NAME = "Bold Marker"
+    BASE_FONT_SIZE = 24   # Base size, will be scaled by energy
+    MAX_FONT_SIZE = 32    # Maximum size for loudest sounds
     PRIMARY_COLOR = "&H0000FFFF"  # Bright yellow
     OUTLINE_COLOR = "&H00000000"  # Black outline
     BACKGROUND_COLOR = "&H00000000"  # Transparent
