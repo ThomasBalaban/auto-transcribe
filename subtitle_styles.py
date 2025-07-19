@@ -168,69 +168,6 @@ class OnomatopoeiaStyle:
         return style
 
 
-class IntroTitleStyle:
-    """Style for intro title text overlay - White box with black text, larger and higher"""
-    # Font settings
-    FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
-    FONT_SIZE = 54
-    FONT_COLOR = "black"
-    
-    # Box settings
-    BOX_ENABLED = True
-    BOX_COLOR = "white@0.9"
-    BOX_BORDER_WIDTH = 15
-    
-    # Position settings
-    POSITION_X = "(w-text_w)/2"  # Centered horizontally
-    POSITION_Y = "500"  # Fixed position from top of the screen
-    
-    # Duration in seconds
-    DEFAULT_DURATION = 5.0
-    
-    @classmethod
-    def get_ffmpeg_filter(cls, text, duration=None):
-        """Generate the FFmpeg filter string for the intro title"""
-        if duration is None:
-            duration = cls.DEFAULT_DURATION
-            
-        return (
-            f"drawtext=fontfile={cls.FONT}:text='{text}':"
-            f"fontsize={cls.FONT_SIZE}:fontcolor={cls.FONT_COLOR}:"
-            f"box={1 if cls.BOX_ENABLED else 0}:boxcolor={cls.BOX_COLOR}:"
-            f"boxborderw={cls.BOX_BORDER_WIDTH}:"
-            f"x={cls.POSITION_X}:y={cls.POSITION_Y}:"
-            f"enable='between(t,0,{duration})'"
-        )
-
-    @classmethod
-    def format_title_text(cls, text, max_chars_per_line=20):
-        """
-        Split long title text into multiple lines with roughly equal length
-        to ensure it doesn't extend beyond 75% of screen width
-        """
-        words = text.split()
-        lines = []
-        current_line = []
-        current_length = 0
-        
-        for word in words:
-            # If adding this word would exceed max length and we have content
-            if current_length + len(word) + 1 > max_chars_per_line and current_line:
-                lines.append(" ".join(current_line))
-                current_line = [word]
-                current_length = len(word)
-            else:
-                current_line.append(word)
-                current_length += len(word) + 1  # +1 for space
-        
-        # Add the last line if it has content
-        if current_line:
-            lines.append(" ".join(current_line))
-        
-        # Join lines with newline characters
-        return "\\n".join(lines)
-
-
 def generate_onomatopoeia_style(events):
     """
     Generate style strings for a list of onomatopoeia events with collision avoidance.
