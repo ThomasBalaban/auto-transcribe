@@ -1,6 +1,6 @@
 import os
 import subprocess
-from subtitle_styles import TRACK2_STYLE, TRACK3_STYLE
+from subtitle_styles import TRACK2_STYLE, TRACK3_STYLE, OnomatopoeiaStyle
 
 def embed_dual_subtitles(input_video, output_video, track2_srt, track3_srt, log):
     """Embed two subtitle tracks into a video file with different positions in a single pass"""
@@ -224,7 +224,8 @@ def embed_triple_subtitles(input_video, output_video, track2_srt, track3_srt, on
         onomatopoeia_srt_fmt = onomatopoeia_srt_fmt.replace(':', r'\\:')
     
     # Use simple, reliable style - EXACTLY like the test that worked
-    onomatopoeia_style = "FontName=Arial,FontSize=64,PrimaryColour=&H0000FFFF,Bold=1,MarginV=200"
+    # onomatopoeia_style = "FontName=Arial,FontSize=64,PrimaryColour=&H0000FFFF,Bold=1,MarginV=200"
+    onomatopoeia_style = OnomatopoeiaStyle.get_simple_style()
     log(f"Using onomatopoeia style: {onomatopoeia_style}")
     
     cmd_onomatopoeia = [

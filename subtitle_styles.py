@@ -69,7 +69,7 @@ class OnomatopoeiaStyle:
     FONT_NAME = "Bold Marker"
     BASE_FONT_SIZE = 24   # Base size, will be scaled by energy
     MAX_FONT_SIZE = 32    # Maximum size for loudest sounds
-    PRIMARY_COLOR = "&H0000FFFF"  # Bright yellow
+    PRIMARY_COLOR = "&H00FFFFFF"  # Bright yellow
     OUTLINE_COLOR = "&H00000000"  # Black outline
     BACKGROUND_COLOR = "&H00000000"  # Transparent
     BOLD = 1
@@ -122,13 +122,13 @@ class OnomatopoeiaStyle:
     
     @classmethod
     def get_simple_style(cls):
-        """Get a simple, reliable style for testing"""
+        """Get a simple, reliable style for testing using class properties"""
         return (
-            f"FontName=Arial,FontSize=48,"
-            f"PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,"
-            f"BackColour=&H00000000,Bold=1,Italic=0,"
-            f"BorderStyle=1,Outline=3,Shadow=0,"
-            f"Alignment=2,MarginV=400,MarginL=0,MarginR=0"
+            f"FontName={cls.FONT_NAME},FontSize={cls.BASE_FONT_SIZE},"
+            f"PrimaryColour={cls.PRIMARY_COLOR},OutlineColour={cls.OUTLINE_COLOR},"
+            f"BackColour={cls.BACKGROUND_COLOR},Bold={cls.BOLD},Italic={cls.ITALIC},"
+            f"BorderStyle={cls.BORDER_STYLE},Outline={cls.OUTLINE},Shadow={cls.SHADOW},"
+            f"Alignment={cls.ALIGNMENT},MarginV={cls.MIN_MARGIN_V},MarginL={cls.MIN_MARGIN_L},MarginR=40"
         )
     
     @classmethod
