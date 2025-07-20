@@ -67,7 +67,7 @@ class DesktopStyle:
 class OnomatopoeiaStyle:
     """Style for comic book onomatopoeia - top 1/3 of screen with dynamic sizing and random positioning"""
     FONT_NAME = "Bold Marker"
-    BASE_FONT_SIZE = 24   # Base size, will be scaled by energy
+    BASE_FONT_SIZE = 140   # Base size, will be scaled by energy
     MAX_FONT_SIZE = 32    # Maximum size for loudest sounds
     PRIMARY_COLOR = "&H00FFFFFF"  # Bright yellow
     OUTLINE_COLOR = "&H00000000"  # Black outline
@@ -80,10 +80,10 @@ class OnomatopoeiaStyle:
     ALIGNMENT = 2  # Center alignment instead of left
     
     # Position constraints (top 1/3 of screen) - FIXED VALUES
-    MIN_MARGIN_V = 200  # Distance from bottom (higher number = higher on screen)
-    MAX_MARGIN_V = 400  # Maximum distance from bottom 
-    MIN_MARGIN_L = 50   # Minimum left margin
-    MAX_MARGIN_L = 150  # Maximum left margin for randomization
+    MIN_MARGIN_V = 500  # Distance from bottom (higher number = higher on screen)
+    MAX_MARGIN_V = 500  # Maximum distance from bottom 
+    MIN_MARGIN_L = 540   # Minimum left margin
+    MAX_MARGIN_L = 540
     
     @classmethod
     def get_style_string_with_energy(cls, energy_level=0.5, random_position=True):

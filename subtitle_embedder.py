@@ -133,12 +133,14 @@ def embed_single_subtitles(input_video, output_video, srt_file, log, is_mic_trac
         except Exception as e:
             log(f"WARNING: Failed to delete temporary file {temp_mp4}: {e}")
 
-def embed_triple_subtitles(input_video, output_video, track2_srt, track3_srt, onomatopoeia_srt, onomatopoeia_events, log):
+
+
+def embed_triple_subtitles(input_video, output_video, track2_srt, track3_srt, onomatopoeia_file, onomatopoeia_events, log):
     """Embed three subtitle tracks into a video file: mic, desktop, and onomatopoeia - STEP BY STEP"""
     log(f"Embedding triple subtitles into video using step-by-step approach...")
     
     # Validate all subtitle files exist
-    subtitle_files = [track2_srt, track3_srt, onomatopoeia_srt]
+    subtitle_files = [track2_srt, track3_srt, onomatopoeia_file]
     existing_files = [f for f in subtitle_files if f and os.path.exists(f) and os.path.getsize(f) > 0]
     
     if len(existing_files) < 3:
@@ -197,49 +199,43 @@ def embed_triple_subtitles(input_video, output_video, track2_srt, track3_srt, on
     # STEP 2: Add onomatopoeia subtitles to the dual-subtitle video
     log("Step 2: Adding onomatopoeia subtitles...")
     
-    # Debug: Check if dual video was created properly
-    if not os.path.exists(temp_dual_video):
-        raise FileNotFoundError(f"Dual subtitle video not created: {temp_dual_video}")
+    # Check if we have ASS or SRT file
+    is_ass_file = onomatopoeia_file.lower().endswith('.ass')
     
-    dual_size = os.path.getsize(temp_dual_video)
-    log(f"Dual subtitle video size: {dual_size} bytes")
-    
-    # Debug: Check onomatopoeia SRT file
-    if not os.path.exists(onomatopoeia_srt):
-        raise FileNotFoundError(f"Onomatopoeia SRT not found: {onomatopoeia_srt}")
-    
-    srt_size = os.path.getsize(onomatopoeia_srt)
-    log(f"Onomatopoeia SRT size: {srt_size} bytes")
-    
-    # Debug: Read and display SRT content
-    try:
-        with open(onomatopoeia_srt, 'r', encoding='utf-8') as f:
-            srt_content = f.read()
-        log(f"SRT content:\n{srt_content}")
-    except Exception as e:
-        log(f"Error reading SRT: {e}")
-    
-    onomatopoeia_srt_fmt = onomatopoeia_srt.replace('\\', '/')
-    if os.name == 'nt':
-        onomatopoeia_srt_fmt = onomatopoeia_srt_fmt.replace(':', r'\\:')
-    
-    # Use simple, reliable style - EXACTLY like the test that worked
-    # onomatopoeia_style = "FontName=Arial,FontSize=64,PrimaryColour=&H0000FFFF,Bold=1,MarginV=200"
-    onomatopoeia_style = OnomatopoeiaStyle.get_simple_style()
-    log(f"Using onomatopoeia style: {onomatopoeia_style}")
-    
-    cmd_onomatopoeia = [
-        'ffmpeg', '-y', 
-        '-i', temp_dual_video,
-        '-vf', f"subtitles='{onomatopoeia_srt_fmt}':force_style='{onomatopoeia_style}'",
-        '-c:a', 'copy', 
-        output_video
-    ]
+    if is_ass_file:
+        log("Using ASS format for onomatopoeia with native styling")
+        # For ASS files, use the ass filter which respects embedded styling
+        onomatopoeia_fmt = onomatopoeia_file.replace('\\', '/')
+        if os.name == 'nt':
+            onomatopoeia_fmt = onomatopoeia_fmt.replace(':', r'\\:')
+        
+        cmd_onomatopoeia = [
+            'ffmpeg', '-y', 
+            '-i', temp_dual_video,
+            '-vf', f"ass='{onomatopoeia_fmt}'",
+            '-c:a', 'copy', 
+            output_video
+        ]
+    else:
+        log("Using SRT format for onomatopoeia with force_style")
+        # For SRT files, use subtitles filter with force_style (original approach)
+        onomatopoeia_fmt = onomatopoeia_file.replace('\\', '/')
+        if os.name == 'nt':
+            onomatopoeia_fmt = onomatopoeia_fmt.replace(':', r'\\:')
+        
+        onomatopoeia_style = OnomatopoeiaStyle.get_simple_style()
+        
+        cmd_onomatopoeia = [
+            'ffmpeg', '-y', 
+            '-i', temp_dual_video,
+            '-vf', f"subtitles='{onomatopoeia_fmt}':force_style='{onomatopoeia_style}'",
+            '-c:a', 'copy', 
+            output_video
+        ]
     
     log(f"Running onomatopoeia subtitle command: {' '.join(cmd_onomatopoeia)}")
     
     try:
-        # Run with more detailed output
         result = subprocess.run(cmd_onomatopoeia, capture_output=True, text=True, check=True)
         log("✓ Onomatopoeia subtitles added successfully")
         
@@ -267,6 +263,9 @@ def embed_triple_subtitles(input_video, output_video, track2_srt, track3_srt, on
                 log(f"Deleted temporary file: {temp_file}")
             except Exception as e:
                 log(f"WARNING: Failed to delete temporary file {temp_file}: {e}")
+
+
+
 
 def embed_subtitles(input_video, output_video, track2_srt, track3_srt, onomatopoeia_srt, onomatopoeia_events, log):
     """

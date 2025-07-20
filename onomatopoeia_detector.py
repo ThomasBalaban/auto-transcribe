@@ -753,3 +753,67 @@ def create_onomatopoeia_srt(audio_path, output_srt_path, log_func=None):
         if log_func:
             log_func(f"Error creating onomatopoeia SRT: {e}")
         return False, []
+
+def create_onomatopoeia_srt(audio_path, output_srt_path, log_func=None, use_animation=True):
+    """
+    Create a subtitle file with onomatopoeia effects from an audio file.
+    Now supports animated effects using ASS format.
+    
+    Args:
+        audio_path (str): Path to the audio file
+        output_srt_path (str): Path for the output subtitle file (will use .ass for animated)
+        log_func: Logging function
+        use_animation (bool): Whether to use animated effects (default True)
+        
+    Returns:
+        tuple: (success: bool, events: list) - Success status and detected events
+    """
+    try:
+        if use_animation:
+            # Try to use animated ASS version
+            try:
+                from onomatopoeia_animator import create_animated_onomatopoeia_ass
+                if log_func:
+                    log_func("Using animated onomatopoeia effects (ASS format)...")
+                
+                # Change extension to .ass for animated version
+                import os
+                ass_path = os.path.splitext(output_srt_path)[0] + '.ass'
+                success, events = create_animated_onomatopoeia_ass(audio_path, ass_path, log_func)
+                
+                # Update the output path reference for the caller
+                if success and hasattr(create_onomatopoeia_srt, '_last_output_path'):
+                    create_onomatopoeia_srt._last_output_path = ass_path
+                
+                return success, events
+                
+            except ImportError:
+                if log_func:
+                    log_func("Animation module not available, falling back to static SRT...")
+                use_animation = False
+        
+        # Fallback to static SRT version
+        if log_func:
+            log_func("Creating static onomatopoeia effects (SRT format)...")
+            
+        detector = OnomatopoeiaDetector(log_func=log_func)
+        events = detector.analyze_audio_file(audio_path)
+        
+        if not events:
+            if log_func:
+                log_func("No onomatopoeia events detected")
+            return False, []
+        
+        srt_content = detector.generate_srt_content(events)
+        
+        with open(output_srt_path, 'w', encoding='utf-8') as f:
+            f.write(srt_content)
+        
+        if log_func:
+            log_func(f"Static onomatopoeia SRT created: {output_srt_path} with {len(events)} events")
+        return True, events
+        
+    except Exception as e:
+        if log_func:
+            log_func(f"Error creating onomatopoeia subtitle file: {e}")
+        return False, []
