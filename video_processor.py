@@ -84,7 +84,7 @@ class VideoProcessor:
             return None
     
     @staticmethod
-    def process_onomatopoeia(track3_audio_path, temp_dir, log_func):
+    def process_onomatopoeia(track3_audio_path, temp_dir, animation_setting, log_func):
         """Process onomatopoeia detection and return the file path and events."""
         onomatopoeia_srt_path = os.path.join(temp_dir, "onomatopoeia_subtitles.srt")
         
@@ -94,12 +94,14 @@ class VideoProcessor:
         
         log_func("\nPROCESSING ONOMATOPOEIA DETECTION:")
         log_func("Analyzing desktop audio for comic book sound effects...")
+        log_func(f"Animation type: {animation_setting}")
         
         try:
             success, onomatopoeia_events = create_onomatopoeia_srt(
                 track3_audio_path, 
                 onomatopoeia_srt_path,
-                log_func
+                log_func,
+                animation_setting=animation_setting
             )
             
             if success and onomatopoeia_events:
@@ -146,7 +148,7 @@ class VideoProcessor:
             return None, []
     
     @staticmethod
-    def process_single_video(input_file, output_file, model_path, device, confidence_threshold, log_func):
+    def process_single_video(input_file, output_file, model_path, device, confidence_threshold, animation_setting, log_func):
         """Process a single video file with onomatopoeia detection."""
         include_timecodes = True  # Always use timecodes
         selected_language = "English"
@@ -169,9 +171,9 @@ class VideoProcessor:
             # Get track 3 audio path for onomatopoeia
             track3_audio_path = os.path.join(temp_dir, "track3_audio.wav")
             
-            # Process onomatopoeia detection
+            # Process onomatopoeia detection with animation setting
             onomatopoeia_file_path, onomatopoeia_events = VideoProcessor.process_onomatopoeia(
-                track3_audio_path, temp_dir, log_func
+                track3_audio_path, temp_dir, animation_setting, log_func
             )
             
             # Embed subtitles
@@ -193,7 +195,7 @@ class VideoProcessor:
                 if track3_srt_path: subtitle_types.append("desktop")
                 if onomatopoeia_file_path: 
                     file_type = "animated effects" if onomatopoeia_file_path.endswith('.ass') else "comic effects"
-                    subtitle_types.append(file_type)
+                    subtitle_types.append(f"{file_type} ({animation_setting.lower()})")
                 
                 if subtitle_types:
                     log_func(f"Video processing completed successfully with {', '.join(subtitle_types)} subtitles: {os.path.basename(output_file)}")

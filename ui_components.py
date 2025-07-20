@@ -3,7 +3,7 @@ UI components and setup for the SimpleAutoSubs application.
 Separated from main.py for better code organization.
 """
 
-import customtkinter as ctk
+import customtkinter as ctk # type: ignore
 from tkinter import messagebox
 
 
@@ -101,22 +101,38 @@ class UISetup:
         onomatopoeia_frame = ctk.CTkFrame(parent)
         onomatopoeia_frame.pack(fill="x", padx=5, pady=5)
         
-        ctk.CTkLabel(onomatopoeia_frame, text="Sound Effects Confidence:").pack(side="left", padx=5, pady=5)
+        # First row - confidence and test button
+        first_row = ctk.CTkFrame(onomatopoeia_frame)
+        first_row.pack(fill="x", padx=5, pady=5)
+        
+        ctk.CTkLabel(first_row, text="Sound Effects Confidence:").pack(side="left", padx=5, pady=5)
         confidence_var = ctk.StringVar(value="0.5")
         ctk.CTkOptionMenu(
-            onomatopoeia_frame,
+            first_row,
             values=["0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9"],
             variable=confidence_var
         ).pack(side="left", padx=5, pady=5)
         
         ctk.CTkButton(
-            onomatopoeia_frame,
+            first_row,
             text="Test Sound Detection",
             command=app.test_onomatopoeia,
             width=140
         ).pack(side="left", padx=(20, 5), pady=5)
         
-        return confidence_var
+        # Second row - animation type selection
+        second_row = ctk.CTkFrame(onomatopoeia_frame)
+        second_row.pack(fill="x", padx=5, pady=5)
+        
+        ctk.CTkLabel(second_row, text="Animation Type:").pack(side="left", padx=5, pady=5)
+        animation_var = ctk.StringVar(value="Random")
+        ctk.CTkOptionMenu(
+            second_row,
+            values=["Random", "Drift & Fade", "Wiggle"],
+            variable=animation_var
+        ).pack(side="left", padx=5, pady=5)
+        
+        return confidence_var, animation_var
     
     @staticmethod
     def create_progress_section(parent):
@@ -166,7 +182,7 @@ class TestDialogs:
             
             # Check if WhisperX can be imported
             try:
-                import whisperx
+                import whisperx # type: ignore
                 app.log("✓ WhisperX module found and imported successfully")
                 whisperx_available = True
             except ImportError as e:
@@ -176,7 +192,7 @@ class TestDialogs:
             # Check specific components if main import worked
             if whisperx_available:
                 try:
-                    from whisperx import load_align_model, align
+                    from whisperx import load_align_model, align  # type: ignore
                     app.log("✓ WhisperX alignment functions available")
                     components_available = True
                 except ImportError as e:
@@ -187,7 +203,7 @@ class TestDialogs:
             
             # Check PyTorch
             try:
-                import torch
+                import torch  # type: ignore
                 app.log(f"✓ PyTorch found (version: {torch.__version__})")
                 
                 if app.device_var.get() == "cuda":
@@ -203,7 +219,7 @@ class TestDialogs:
             
             # Check other dependencies
             try:
-                import faster_whisper
+                import faster_whisper # type: ignore
                 app.log("✓ Faster-Whisper available")
             except ImportError:
                 app.log("✗ Faster-Whisper not found")
@@ -255,7 +271,7 @@ class TestDialogs:
             
             # Check TensorFlow Hub
             try:
-                import tensorflow_hub as hub
+                import tensorflow_hub as hub  # type: ignore
                 app.log(f"✓ TensorFlow Hub found")
             except ImportError:
                 app.log("✗ TensorFlow Hub not found (required for YAMNet)")
@@ -266,6 +282,10 @@ class TestDialogs:
             from onomatopoeia_detector import OnomatopoeiaDetector
             confidence = float(app.confidence_var.get())
             detector = OnomatopoeiaDetector(confidence_threshold=confidence, log_func=app.log)
+            
+            # Show animation type setting
+            animation_type = app.animation_var.get()
+            app.log(f"Animation Type Setting: {animation_type}")
             
             if detector.yamnet_model is None:
                 app.log("❌ ONOMATOPOEIA STATUS: NOT AVAILABLE")
@@ -287,6 +307,7 @@ class TestDialogs:
                     f"• YAMNet model loaded successfully\n"
                     f"• {len(detector.class_names)} sound classes available\n"
                     f"• Confidence threshold: {confidence}\n"
+                    f"• Animation type: {animation_type}\n"
                     f"• Comic book effects will appear in your videos"
                 )
             

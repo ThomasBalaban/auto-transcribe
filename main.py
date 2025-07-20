@@ -6,7 +6,7 @@ Dual track subtitle generator with animated onomatopoeia effects.
 import os
 import threading
 import queue
-import customtkinter as ctk
+import customtkinter as ctk # type: ignore
 import traceback
 from tkinter import filedialog, messagebox
 
@@ -46,7 +46,7 @@ class DualSubtitleApp:
         self.files_textbox = UISetup.create_file_list_section(frame, self)
         self.output_dir_entry = UISetup.create_output_directory_section(frame, self)
         self.model_var, self.device_var = UISetup.create_model_settings_section(frame, self)
-        self.confidence_var = UISetup.create_onomatopoeia_section(frame, self)
+        self.confidence_var, self.animation_var = UISetup.create_onomatopoeia_section(frame, self)
         self.progress_label, self.progress_bar = UISetup.create_progress_section(frame)
         
         # Process button
@@ -232,6 +232,12 @@ class DualSubtitleApp:
             total_videos = len(self.input_files)
             self.log(f"Starting batch processing of {total_videos} videos...")
             
+            # Log animation settings
+            animation_type = self.animation_var.get()
+            confidence = self.confidence_var.get()
+            self.log(f"Animation Type: {animation_type}")
+            self.log(f"Sound Detection Confidence: {confidence}")
+            
             for i, (input_file, output_file) in enumerate(zip(self.input_files, self.output_files)):
                 self.current_process_index = i
                 
@@ -256,6 +262,7 @@ class DualSubtitleApp:
                     self.model_var.get(),
                     self.device_var.get(),
                     float(self.confidence_var.get()),
+                    self.animation_var.get(),  # Pass animation type
                     self.log
                 )
                 
@@ -313,7 +320,7 @@ def main():
     
     root = ctk.CTk()
     root.title("SimpleAutoSubs - Dual Track Subtitler")
-    root.geometry("700x700")
+    root.geometry("700x750")  # Slightly taller to accommodate new controls
     
     app = DualSubtitleApp(root)
     root.mainloop()

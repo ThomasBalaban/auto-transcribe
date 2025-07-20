@@ -1,18 +1,19 @@
 """
 Onomatopoeia animation system for comic book-style effects.
-Creates animations using ASS (Advanced SubStation Alpha) format.
+Creates smooth animations using ASS (Advanced SubStation Alpha) format.
 """
 
 import random
+import math
 
 class OnomatopoeiaAnimator:
-    """Handles animation generation for onomatopoeia subtitles using ASS format"""
+    """Handles animation generation for onomatopoeia subtitles using ASS format with smooth animations"""
     
     # Animation constants
     DRIFT_DISTANCE = 50
-    WIGGLE_DISTANCE = 15
-    ANIMATION_FRAMES = 5
-    FRAME_DURATION = 0.1  # 5 frames × 0.1s = 0.5s total
+    WIGGLE_AMPLITUDE = 15
+    ANIMATION_FRAMES = 10  # Increased for smoother animation
+    FRAME_DURATION = 0.05  # 10 frames × 0.05s = 0.5s total
     
     # Animation types
     DRIFT_FADE = "drift_fade"
@@ -22,6 +23,16 @@ class OnomatopoeiaAnimator:
     def get_random_animation_type(cls):
         """Randomly select an animation type with 50/50 probability."""
         return random.choice([cls.DRIFT_FADE, cls.WIGGLE])
+    
+    @classmethod
+    def get_animation_type_from_setting(cls, animation_setting):
+        """Get animation type based on UI setting."""
+        if animation_setting == "Drift & Fade":
+            return cls.DRIFT_FADE
+        elif animation_setting == "Wiggle":
+            return cls.WIGGLE
+        else:  # "Random" or any other value
+            return cls.get_random_animation_type()
     
     @classmethod
     def create_ass_header(cls):
@@ -43,28 +54,36 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     
     @classmethod
     def calculate_drift_positions(cls, base_x, base_y):
-        """Calculate positions for drift and fade animation."""
+        """Calculate smooth positions for drift and fade animation."""
         positions = []
         for frame in range(cls.ANIMATION_FRAMES):
+            # Smooth progress from 0 to 1
             progress = frame / (cls.ANIMATION_FRAMES - 1)
             
-            x = base_x
-            y = base_y - int(cls.DRIFT_DISTANCE * progress)  # Drift upward
-            alpha = int(255 * (1.0 - 0.8 * progress))  # Fade out
+            # Smooth upward drift using easing
+            # Using ease-out curve for natural deceleration
+            ease_progress = 1 - (1 - progress) ** 2
+            
+            x = base_x  # No horizontal movement
+            y = base_y - int(cls.DRIFT_DISTANCE * ease_progress)  # Smooth upward drift
+            alpha = int(255 * (1.0 - 0.8 * progress))  # Gradual fade out
             
             positions.append((x, y, alpha))
         return positions
     
     @classmethod
     def calculate_wiggle_positions(cls, base_x, base_y):
-        """Calculate positions for wiggle animation."""
-        wiggle_offsets = [0, cls.WIGGLE_DISTANCE, -cls.WIGGLE_DISTANCE, 
-                         cls.WIGGLE_DISTANCE // 2, 0]
+        """Calculate smooth positions for wiggle animation using sine wave."""
         positions = []
-        
         for frame in range(cls.ANIMATION_FRAMES):
-            x = base_x + wiggle_offsets[frame]
-            y = base_y
+            # Calculate angle for sine wave (2 full cycles over the animation)
+            angle = (frame / (cls.ANIMATION_FRAMES - 1)) * 4 * math.pi
+            
+            # Smooth sine wave motion
+            x_offset = cls.WIGGLE_AMPLITUDE * math.sin(angle)
+            
+            x = base_x + int(x_offset)
+            y = base_y  # No vertical movement
             alpha = 255  # No fading for wiggle
             
             positions.append((x, y, alpha))
@@ -93,8 +112,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         return f"Dialogue: 0,{start_formatted},{end_formatted},Onomatopoeia,,0,0,0,,{styled_text}"
     
     @classmethod
-    def create_animated_ass_events(cls, events):
-        """Create ASS dialogue events for all onomatopoeia with animations."""
+    def create_animated_ass_events(cls, events, animation_setting="Random"):
+        """Create ASS dialogue events for all onomatopoeia with smooth animations."""
         from subtitle_styles import OnomatopoeiaStyle
         dialogue_lines = []
         
@@ -108,8 +127,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             base_x = OnomatopoeiaStyle.MIN_MARGIN_L
             base_y = OnomatopoeiaStyle.MIN_MARGIN_V
             
-            # Select and calculate animation
-            animation_type = cls.get_random_animation_type()
+            # Select and calculate animation based on UI setting
+            animation_type = cls.get_animation_type_from_setting(animation_setting)
             if animation_type == cls.DRIFT_FADE:
                 positions = cls.calculate_drift_positions(base_x, base_y)
             elif animation_type == cls.WIGGLE:
@@ -135,13 +154,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         return dialogue_lines
     
     @classmethod
-    def generate_animated_ass_content(cls, events):
-        """Generate complete ASS file content with animations."""
+    def generate_animated_ass_content(cls, events, animation_setting="Random"):
+        """Generate complete ASS file content with smooth animations."""
         if not events:
             return cls.create_ass_header()
         
         ass_content = [cls.create_ass_header()]
-        dialogue_lines = cls.create_animated_ass_events(events)
+        dialogue_lines = cls.create_animated_ass_events(events, animation_setting)
         
         for line in dialogue_lines:
             ass_content.append(line)
@@ -149,7 +168,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         return "\n".join(ass_content)
 
 
-def create_animated_onomatopoeia_ass(audio_path, output_ass_path, log_func=None):
+def create_animated_onomatopoeia_ass(audio_path, output_ass_path, animation_setting="Random", log_func=None):
     """Create an animated onomatopoeia ASS file from an audio file."""
     try:
         from onomatopoeia_detector import OnomatopoeiaDetector
@@ -163,17 +182,18 @@ def create_animated_onomatopoeia_ass(audio_path, output_ass_path, log_func=None)
             return False, []
         
         if log_func:
-            log_func(f"Creating animated onomatopoeia ASS file with {len(events)} events...")
-            log_func(f"Each effect will have {OnomatopoeiaAnimator.ANIMATION_FRAMES} animation frames")
+            log_func(f"Creating smooth animated onomatopoeia ASS file with {len(events)} events...")
+            log_func(f"Animation type setting: {animation_setting}")
+            log_func(f"Each effect will have {OnomatopoeiaAnimator.ANIMATION_FRAMES} smooth animation frames")
         
-        animated_ass_content = OnomatopoeiaAnimator.generate_animated_ass_content(events)
+        animated_ass_content = OnomatopoeiaAnimator.generate_animated_ass_content(events, animation_setting)
         
         with open(output_ass_path, 'w', encoding='utf-8') as f:
             f.write(animated_ass_content)
         
         if log_func:
-            log_func(f"Animated onomatopoeia ASS file created: {output_ass_path}")
-            log_func(f"Generated {len(events)} animated sound effects")
+            log_func(f"Smooth animated onomatopoeia ASS file created: {output_ass_path}")
+            log_func(f"Generated {len(events)} smooth animated sound effects")
             log_func(f"Total dialogue entries: {len(events) * OnomatopoeiaAnimator.ANIMATION_FRAMES}")
         
         return True, events

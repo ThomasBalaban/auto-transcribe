@@ -754,16 +754,17 @@ def create_onomatopoeia_srt(audio_path, output_srt_path, log_func=None):
             log_func(f"Error creating onomatopoeia SRT: {e}")
         return False, []
 
-def create_onomatopoeia_srt(audio_path, output_srt_path, log_func=None, use_animation=True):
+def create_onomatopoeia_srt(audio_path, output_srt_path, log_func=None, use_animation=True, animation_setting="Random"):
     """
     Create a subtitle file with onomatopoeia effects from an audio file.
-    Now supports animated effects using ASS format.
+    Now supports animated effects using ASS format with animation type selection.
     
     Args:
         audio_path (str): Path to the audio file
         output_srt_path (str): Path for the output subtitle file (will use .ass for animated)
         log_func: Logging function
         use_animation (bool): Whether to use animated effects (default True)
+        animation_setting (str): Animation type ("Random", "Drift & Fade", "Wiggle")
         
     Returns:
         tuple: (success: bool, events: list) - Success status and detected events
@@ -774,12 +775,12 @@ def create_onomatopoeia_srt(audio_path, output_srt_path, log_func=None, use_anim
             try:
                 from onomatopoeia_animator import create_animated_onomatopoeia_ass
                 if log_func:
-                    log_func("Using animated onomatopoeia effects (ASS format)...")
+                    log_func(f"Using animated onomatopoeia effects (ASS format) - {animation_setting}...")
                 
                 # Change extension to .ass for animated version
                 import os
                 ass_path = os.path.splitext(output_srt_path)[0] + '.ass'
-                success, events = create_animated_onomatopoeia_ass(audio_path, ass_path, log_func)
+                success, events = create_animated_onomatopoeia_ass(audio_path, ass_path, animation_setting, log_func)
                 
                 # Update the output path reference for the caller
                 if success and hasattr(create_onomatopoeia_srt, '_last_output_path'):
@@ -796,6 +797,7 @@ def create_onomatopoeia_srt(audio_path, output_srt_path, log_func=None, use_anim
         if log_func:
             log_func("Creating static onomatopoeia effects (SRT format)...")
             
+        from onomatopoeia_detector import OnomatopoeiaDetector
         detector = OnomatopoeiaDetector(log_func=log_func)
         events = detector.analyze_audio_file(audio_path)
         
