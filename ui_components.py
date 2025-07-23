@@ -1,6 +1,6 @@
 """
 UI components and setup for the SimpleAutoSubs application.
-Separated from main.py for better code organization.
+Updated to include all new animation style options.
 """
 
 import customtkinter as ctk # type: ignore
@@ -97,7 +97,7 @@ class UISetup:
     
     @staticmethod
     def create_onomatopoeia_section(parent, app):
-        """Create the onomatopoeia settings section."""
+        """Create the onomatopoeia settings section with all new animation options."""
         onomatopoeia_frame = ctk.CTkFrame(parent)
         onomatopoeia_frame.pack(fill="x", padx=5, pady=5)
         
@@ -106,7 +106,7 @@ class UISetup:
         first_row.pack(fill="x", padx=5, pady=5)
         
         ctk.CTkLabel(first_row, text="Sound Effects Confidence:").pack(side="left", padx=5, pady=5)
-        confidence_var = ctk.StringVar(value="0.5")
+        confidence_var = ctk.StringVar(value="0.3")
         ctk.CTkOptionMenu(
             first_row,
             values=["0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9"],
@@ -120,16 +120,31 @@ class UISetup:
             width=140
         ).pack(side="left", padx=(20, 5), pady=5)
         
-        # Second row - animation type selection
+        # Second row - animation type selection with all new options
         second_row = ctk.CTkFrame(onomatopoeia_frame)
         second_row.pack(fill="x", padx=5, pady=5)
         
         ctk.CTkLabel(second_row, text="Animation Type:").pack(side="left", padx=5, pady=5)
         animation_var = ctk.StringVar(value="Random")
+        
+        # All available animation options
+        animation_options = [
+            "Random",
+            "Drift & Fade", 
+            "Wiggle",
+            "Pop & Shrink",
+            "Shake",
+            "Pulse",
+            "Wave",
+            "Explode-Out",
+            "Hyper Bounce"
+        ]
+        
         ctk.CTkOptionMenu(
             second_row,
-            values=["Random", "Drift & Fade", "Wiggle"],
-            variable=animation_var
+            values=animation_options,
+            variable=animation_var,
+            width=150
         ).pack(side="left", padx=5, pady=5)
         
         return confidence_var, animation_var
@@ -254,7 +269,7 @@ class TestDialogs:
     
     @staticmethod
     def test_onomatopoeia(app):
-        """Test onomatopoeia detection system."""
+        """Test onomatopoeia detection system with enhanced animation info."""
         try:
             app.log("="*50)
             app.log("TESTING ONOMATOPOEIA DETECTION SYSTEM...")
@@ -283,9 +298,19 @@ class TestDialogs:
             confidence = float(app.confidence_var.get())
             detector = OnomatopoeiaDetector(confidence_threshold=confidence, log_func=app.log)
             
-            # Show animation type setting
+            # Show animation type setting and all available animations
             animation_type = app.animation_var.get()
             app.log(f"Animation Type Setting: {animation_type}")
+            
+            # Import and show all available animations
+            try:
+                from onomatopoeia_animator import OnomatopoeiaAnimator
+                all_animations = OnomatopoeiaAnimator.get_all_animation_types()
+                app.log(f"Available Animation Styles ({len(all_animations)}):")
+                for i, anim in enumerate(all_animations, 1):
+                    app.log(f"  {i}. {anim.replace('_', ' ').title()}")
+            except ImportError:
+                app.log("Animation system not available")
             
             if detector.yamnet_model is None:
                 app.log("❌ ONOMATOPOEIA STATUS: NOT AVAILABLE")
@@ -298,17 +323,20 @@ class TestDialogs:
                 app.log(f"   YAMNet model loaded successfully with {len(detector.class_names)} sound classes")
                 
                 from onomatopoeia_detector import SOUND_MAPPINGS
+                app.log(f"Sound Effect Categories ({len(SOUND_MAPPINGS)}):")
                 for sound_type, words in list(SOUND_MAPPINGS.items())[:5]:
-                    app.log(f"  {sound_type}: {', '.join(words)}")
+                    app.log(f"  {sound_type}: {', '.join(words[:3])}...")
                 
                 messagebox.showinfo(
                     "Onomatopoeia Test Successful",
                     f"✓ Onomatopoeia detection is fully operational!\n\n"
                     f"• YAMNet model loaded successfully\n"
                     f"• {len(detector.class_names)} sound classes available\n"
+                    f"• {len(SOUND_MAPPINGS)} effect categories\n"
+                    f"• 8 animation styles available\n"
                     f"• Confidence threshold: {confidence}\n"
                     f"• Animation type: {animation_type}\n"
-                    f"• Comic book effects will appear in your videos"
+                    f"• Enhanced comic book effects ready!"
                 )
             
             app.log("="*50)
