@@ -118,45 +118,82 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     
     @classmethod
     def calculate_pop_shrink_positions(cls, base_x, base_y, base_font_size):
-        """Calculate positions for pop and shrink animation with smoother transitions."""
+        """Calculate positions for pop and shrink animation with rubber band elasticity."""
         positions = []
-        max_size = int(base_font_size * 1.4)  # Reduced from 1.8 for less jarring effect
+        
+        # Rubber band sequence: Pop → Snapback → Quick oscillations → Settle
+        sizes = [
+            base_font_size,           # Frame 0: Normal
+            int(base_font_size * 1.8), # Frame 1: POP!
+            int(base_font_size * 1.9), # Frame 2: Peak pop
+            int(base_font_size * 0.7), # Frame 3: Big snapback
+            int(base_font_size * 0.6), # Frame 4: Deeper snapback
+            int(base_font_size * 1.1), # Frame 5: First bounce up
+            int(base_font_size * 0.9), # Frame 6: Quick down
+            int(base_font_size * 1.05),# Frame 7: Smaller bounce
+            int(base_font_size * 0.95),# Frame 8: Smaller down
+            int(base_font_size * 1.02),# Frame 9: Tiny bounce
+            int(base_font_size * 0.98),# Frame 10: Tiny down
+            base_font_size,           # Frame 11: Settle
+            base_font_size,           # Frame 12-14: Hold steady
+            base_font_size,
+            base_font_size
+        ]
+        
+        # Tiny rotation sequence (5° max)
+        rotations = [
+            0,    # Frame 0: Normal
+            5,    # Frame 1: Pop rotation
+            5,    # Frame 2: Hold pop rotation
+            -3,   # Frame 3: Counter-rotate on snapback
+            -3,   # Frame 4: Hold counter
+            2,    # Frame 5: Small rotation
+            -1,   # Frame 6: Small counter
+            1,    # Frame 7: Tiny rotation
+            -0.5, # Frame 8: Tiny counter
+            0.5,  # Frame 9: Micro rotation
+            0,    # Frame 10: Back to normal
+            0, 0, 0, 0  # Frames 11-14: Steady
+        ]
         
         for frame in range(cls.ANIMATION_FRAMES):
-            progress = frame / (cls.ANIMATION_FRAMES - 1)
-            
-            # Smoother pop and shrink using ease-out curve
-            if frame <= 2:  # Pop phase - first 3 frames
-                pop_progress = frame / 2
-                font_size = int(base_font_size + (max_size - base_font_size) * pop_progress)
-            else:  # Shrink phase - remaining frames with ease-out
-                shrink_progress = (frame - 2) / (cls.ANIMATION_FRAMES - 3)
-                # Ease-out curve for smooth shrinking
-                ease_progress = 1 - (1 - shrink_progress) ** 3
-                font_size = int(max_size - (max_size - base_font_size) * ease_progress)
+            font_size = sizes[frame] if frame < len(sizes) else base_font_size
+            rotation = rotations[frame] if frame < len(rotations) else 0
             
             x = base_x
             y = base_y
             alpha = 255
             
-            positions.append((x, y, alpha, font_size))
+            positions.append((x, y, alpha, font_size, rotation))
         return positions
     
     @classmethod
     def calculate_shake_positions(cls, base_x, base_y):
-        """Calculate positions for shake animation with random jitter."""
+        """Calculate positions for shake animation with exponential decay and rotation."""
         positions = []
+        max_shake = cls.SHAKE_AMPLITUDE
+        max_rotation = 15  # degrees
+        
         for frame in range(cls.ANIMATION_FRAMES):
-            # Random shake within amplitude
-            x_offset = random.randint(-cls.SHAKE_AMPLITUDE, cls.SHAKE_AMPLITUDE)
-            y_offset = random.randint(-cls.SHAKE_AMPLITUDE//2, cls.SHAKE_AMPLITUDE//2)
+            progress = frame / (cls.ANIMATION_FRAMES - 1)
+            
+            # Exponential decay - starts violent, calms down quickly
+            intensity = (1 - progress) ** 2  # Exponential decay
+            
+            # Random shake within decreasing bounds
+            shake_amount = max_shake * intensity
+            rotation_amount = max_rotation * intensity
+            
+            x_offset = random.randint(-int(shake_amount), int(shake_amount))
+            y_offset = random.randint(-int(shake_amount//2), int(shake_amount//2))
+            rotation = random.uniform(-rotation_amount, rotation_amount)
             
             x = base_x + x_offset
             y = base_y + y_offset
             alpha = 255
             font_size = None
             
-            positions.append((x, y, alpha, font_size))
+            positions.append((x, y, alpha, font_size, rotation))
         return positions
     
     @classmethod
@@ -198,9 +235,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     
     @classmethod
     def create_wave_per_letter_events(cls, start_time, end_time, word, base_x, base_y, base_font_size):
-        """Create wave animation with per-letter control."""
+        """Create wave animation with per-letter lean physics - single wave pass."""
         dialogue_lines = []
-        letter_spacing = base_font_size * 0.6  # Approximate letter width
+        letter_spacing = base_font_size * 0.6
         
         for letter_index, letter in enumerate(word):
             if letter.isspace():
@@ -219,19 +256,59 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 if frame_start >= end_time:
                     break
                 
-                # Wave calculation: each letter follows the wave with a phase offset
+                # Single wave pass: wave travels from left to right through the word
                 time_progress = frame / (cls.ANIMATION_FRAMES - 1)
-                wave_phase = (time_progress * 4 * math.pi) + (letter_index * math.pi / 2)  # Phase offset per letter
-                y_offset = cls.WAVE_AMPLITUDE * math.sin(wave_phase)
+                
+                # Wave position moves from -1 (before first letter) to word_length+1 (after last letter)
+                wave_position = -1 + (len(word) + 2) * time_progress
+                
+                # Distance from wave center to this letter
+                distance_from_wave = abs(wave_position - letter_index)
+                
+                # Wave affects letters within a certain range
+                wave_width = 1.5  # How wide the wave influence is
+                
+                if distance_from_wave <= wave_width:
+                    # Letter is within wave influence
+                    wave_intensity = math.cos((distance_from_wave / wave_width) * math.pi / 2)
+                    
+                    # Y position (vertical wave motion)
+                    y_offset = cls.WAVE_AMPLITUDE * wave_intensity
+                    
+                    # Rotation: lean based on wave direction
+                    # If wave is approaching (wave_position < letter_index): lean away (+)
+                    # If wave is leaving (wave_position > letter_index): lean toward (-)
+                    wave_direction = wave_position - letter_index
+                    rotation = -30 * wave_direction * wave_intensity / wave_width
+                    rotation = max(-30, min(30, rotation))  # Clamp to ±30°
+                    
+                else:
+                    # Letter is not affected by wave
+                    y_offset = 0
+                    rotation = 0
                 
                 letter_y = base_y + int(y_offset)
                 
-                dialogue_line = cls.create_ass_dialogue_line(
-                    frame_start, frame_end, letter, letter_x, letter_y, 255, base_font_size
+                dialogue_line = cls.create_wave_ass_dialogue_line(
+                    frame_start, frame_end, letter, letter_x, letter_y, 255, base_font_size, rotation
                 )
                 dialogue_lines.append(dialogue_line)
         
         return dialogue_lines
+    
+    @classmethod
+    def create_wave_ass_dialogue_line(cls, start_time, end_time, text, x, y, alpha, font_size, rotation_degrees):
+        """Create an ASS dialogue line with rotation for wave lean effect."""
+        start_formatted = cls.format_ass_time(start_time)
+        end_formatted = cls.format_ass_time(end_time)
+        
+        alpha_hex = f"{255 - alpha:02X}"
+        
+        # Build override tags with rotation
+        override_tags = f"{{\\pos({x},{y})\\alpha&H{alpha_hex}&\\fs{font_size}\\frz{rotation_degrees:.1f}}}"
+        styled_text = f"{override_tags}{text}"
+        
+        return f"Dialogue: 0,{start_formatted},{end_formatted},Onomatopoeia,,0,0,0,,{styled_text}"
     
     @classmethod
     def calculate_explode_out_positions(cls, base_x, base_y):
@@ -391,6 +468,26 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             return cls.calculate_drift_positions(base_x, base_y)
     
     @classmethod
+    def create_ass_dialogue_line_with_rotation(cls, start_time, end_time, text, x, y, alpha, font_size, rotation=0):
+        """Create an ASS dialogue line with optional rotation."""
+        start_formatted = cls.format_ass_time(start_time)
+        end_formatted = cls.format_ass_time(end_time)
+        
+        alpha_hex = f"{255 - alpha:02X}"
+        
+        # Build override tags
+        override_tags = f"{{\\pos({x},{y})\\alpha&H{alpha_hex}&"
+        if font_size is not None:
+            override_tags += f"\\fs{font_size}"
+        if rotation != 0:
+            override_tags += f"\\frz{rotation:.1f}"
+        override_tags += "}"
+        
+        styled_text = f"{override_tags}{text}"
+        
+        return f"Dialogue: 0,{start_formatted},{end_formatted},Onomatopoeia,,0,0,0,,{styled_text}"
+    
+    @classmethod
     def format_ass_time(cls, seconds):
         """Format time for ASS format: H:MM:SS.CC"""
         centiseconds = int((seconds - int(seconds)) * 100)
@@ -460,7 +557,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 
                 # Create dialogue lines for each frame
                 for frame, position_data in enumerate(positions):
-                    x, y, alpha, frame_font_size = position_data
+                    if len(position_data) == 5:  # Has rotation
+                        x, y, alpha, frame_font_size, rotation = position_data
+                    else:  # No rotation (legacy format)
+                        x, y, alpha, frame_font_size = position_data
+                        rotation = 0
                     
                     frame_start = start_time + (frame * cls.FRAME_DURATION)
                     frame_end = frame_start + cls.FRAME_DURATION
@@ -473,8 +574,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     # Use frame-specific font size if provided, otherwise use base
                     final_font_size = frame_font_size if frame_font_size is not None else font_size
                     
-                    dialogue_line = cls.create_ass_dialogue_line(
-                        frame_start, frame_end, word, x, y, alpha, final_font_size
+                    dialogue_line = cls.create_ass_dialogue_line_with_rotation(
+                        frame_start, frame_end, word, x, y, alpha, final_font_size, rotation
                     )
                     dialogue_lines.append(dialogue_line)
         
