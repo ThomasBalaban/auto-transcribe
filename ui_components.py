@@ -304,7 +304,17 @@ class TestDialogs:
             
             # Import and show all available animations
             try:
-                from onomatopoeia_animator import OnomatopoeiaAnimator
+                from animations import OnomatopoeiaAnimator
+                all_animations = OnomatopoeiaAnimator.get_all_animation_types()
+                app.log(f"Available Animation Styles ({len(all_animations)}):")
+                for i, anim in enumerate(all_animations, 1):
+                    app.log(f"  {i}. {anim.replace('_', ' ').title()}")
+            except ImportError:
+                app.log("Animation system not available")
+
+            # NEW import:
+            try:
+                from animations import OnomatopoeiaAnimator
                 all_animations = OnomatopoeiaAnimator.get_all_animation_types()
                 app.log(f"Available Animation Styles ({len(all_animations)}):")
                 for i, anim in enumerate(all_animations, 1):

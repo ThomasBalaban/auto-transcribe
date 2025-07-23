@@ -773,7 +773,7 @@ def create_onomatopoeia_srt(audio_path, output_srt_path, log_func=None, use_anim
         if use_animation:
             # Try to use animated ASS version
             try:
-                from onomatopoeia_animator import create_animated_onomatopoeia_ass
+                from animations import create_animated_onomatopoeia_ass
                 if log_func:
                     log_func(f"Using animated onomatopoeia effects (ASS format) - {animation_setting}...")
                 
