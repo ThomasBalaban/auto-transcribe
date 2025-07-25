@@ -754,68 +754,91 @@ def create_onomatopoeia_srt(audio_path, output_srt_path, log_func=None):
             log_func(f"Error creating onomatopoeia SRT: {e}")
         return False, []
 
+
 def create_onomatopoeia_srt(audio_path, output_srt_path, log_func=None, use_animation=True, animation_setting="Random"):
     """
-    Create a subtitle file with onomatopoeia effects from an audio file.
-    Now supports animated effects using ASS format with animation type selection.
+    Create a subtitle file with onomatopoeia effects using AI-determined durations.
+    This version removes all filters and lets the AI decide everything naturally.
     
     Args:
         audio_path (str): Path to the audio file
-        output_srt_path (str): Path for the output subtitle file (will use .ass for animated)
+        output_srt_path (str): Path for the output subtitle file
         log_func: Logging function
-        use_animation (bool): Whether to use animated effects (default True)
-        animation_setting (str): Animation type ("Random", "Drift & Fade", "Wiggle")
+        use_animation (bool): Whether to use animated effects
+        animation_setting (str): Animation type
         
     Returns:
         tuple: (success: bool, events: list) - Success status and detected events
     """
     try:
-        if use_animation:
-            # Try to use animated ASS version
-            try:
-                from animations import create_animated_onomatopoeia_ass
-                if log_func:
-                    log_func(f"Using animated onomatopoeia effects (ASS format) - {animation_setting}...")
-                
-                # Change extension to .ass for animated version
-                import os
-                ass_path = os.path.splitext(output_srt_path)[0] + '.ass'
-                success, events = create_animated_onomatopoeia_ass(audio_path, ass_path, animation_setting, log_func)
-                
-                # Update the output path reference for the caller
-                if success and hasattr(create_onomatopoeia_srt, '_last_output_path'):
-                    create_onomatopoeia_srt._last_output_path = ass_path
-                
-                return success, events
-                
-            except ImportError:
-                if log_func:
-                    log_func("Animation module not available, falling back to static SRT...")
-                use_animation = False
-        
-        # Fallback to static SRT version
         if log_func:
-            log_func("Creating static onomatopoeia effects (SRT format)...")
-            
-        from onomatopoeia_detector import OnomatopoeiaDetector
-        detector = OnomatopoeiaDetector(log_func=log_func)
-        events = detector.analyze_audio_file(audio_path)
+            log_func("=== AI-DETERMINED ONOMATOPOEIA SYSTEM ===")
+            log_func("No confidence filters, no energy thresholds - pure AI decisions")
+        
+        # Import the AI detector
+        from ai_onomatopoeia_detector import AIOnomatopoeiaDetector
+        
+        # Get AI sensitivity from the confidence setting (now repurposed)
+        # Note: In video_processor.py, you'll need to pass the confidence_threshold as ai_sensitivity
+        ai_sensitivity = 0.5  # Default, should be passed from UI
+        
+        # Use AI detector instead of original
+        ai_detector = AIOnomatopoeiaDetector(ai_sensitivity=ai_sensitivity, log_func=log_func)
+        events = ai_detector.analyze_audio_file(audio_path)
         
         if not events:
             if log_func:
-                log_func("No onomatopoeia events detected")
+                log_func("AI determined no onomatopoeia events should be created")
             return False, []
         
-        srt_content = detector.generate_srt_content(events)
+        if use_animation:
+            try:
+                from animations.core import OnomatopoeiaAnimator
+                if log_func:
+                    log_func(f"Creating AI-timed animated effects (ASS format) - {animation_setting}")
+                
+                # Change extension to .ass for animated version
+                ass_path = os.path.splitext(output_srt_path)[0] + '.ass'
+                
+                # Generate animated content with AI-determined durations
+                animator = OnomatopoeiaAnimator()
+                animated_content = animator.generate_animated_ass_content(events, animation_setting)
+                
+                with open(ass_path, 'w', encoding='utf-8') as f:
+                    f.write(animated_content)
+                
+                if log_func:
+                    log_func(f"AI animated onomatopoeia created: {len(events)} events with natural timing")
+                    for i, event in enumerate(events[:3]):
+                        duration = event['end_time'] - event['start_time']
+                        log_func(f"  Event {i+1}: {event['word']} - {duration:.1f}s (AI decision)")
+                
+                return True, events
+                
+            except ImportError:
+                if log_func:
+                    log_func("Animation module not available, falling back to static SRT")
+                use_animation = False
         
-        with open(output_srt_path, 'w', encoding='utf-8') as f:
-            f.write(srt_content)
-        
-        if log_func:
-            log_func(f"Static onomatopoeia SRT created: {output_srt_path} with {len(events)} events")
-        return True, events
+        # Fallback to static SRT with AI durations
+        if not use_animation:
+            if log_func:
+                log_func("Creating AI-timed static effects (SRT format)")
+            
+            # Generate SRT content with AI durations
+            srt_content = ai_detector.generate_srt_content(events)
+            
+            with open(output_srt_path, 'w', encoding='utf-8') as f:
+                f.write(srt_content)
+            
+            if log_func:
+                log_func(f"AI static onomatopoeia created: {len(events)} events with natural timing")
+            
+            return True, events
         
     except Exception as e:
         if log_func:
-            log_func(f"Error creating onomatopoeia subtitle file: {e}")
+            log_func(f"Error in AI onomatopoeia system: {e}")
+            import traceback
+            log_func(f"Traceback: {traceback.format_exc()}")
         return False, []
