@@ -133,7 +133,6 @@ SOUND_MAPPINGS = {
     'tambourine': ['JINGLE'],
     
     # Speech & Human Vocal
-    'speech': ['TALK'],
     'shout': ['SHOUT'],
     'scream': ['SCREAM'],
     'yell': ['YELL'],

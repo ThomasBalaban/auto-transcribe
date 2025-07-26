@@ -1,6 +1,7 @@
 """
 Enhanced Onomatopoeia detection with AI-determined duration.
 The AI determines duration based on sound characteristics without external filters.
+Updated with overlapping chunks and peak detection for better timing accuracy.
 """
 
 import os
@@ -9,7 +10,10 @@ import numpy as np # type: ignore
 import librosa # type: ignore
 import tensorflow as tf # type: ignore
 import tensorflow_hub as hub # type: ignore
-from onomatopoeia_detector import SOUND_MAPPINGS, YAMNET_CLASS_MAPPINGS
+from sound_mappings import SOUND_MAPPINGS
+from yamnet_mappings import YAMNET_CLASS_MAPPINGS
+from sound_duration_profiles import sound_duration_profiles
+from ai_thresholds import AI_THRESHOLDS
 
 class AIOnomatopoeiaDetector:
     """Enhanced detector where AI determines onomatopoeia duration naturally"""
@@ -29,116 +33,8 @@ class AIOnomatopoeiaDetector:
         self.recent_words = []
         self.max_recent_words = 5
         
-        # Sound duration characteristics - AI determines these based on sound type
-        self.sound_duration_profiles = {
-            # Impact sounds - brief and sharp
-            'explosion': {'base_duration': 0.8, 'variability': 0.3, 'decay_type': 'sharp'},
-            'crash': {'base_duration': 0.6, 'variability': 0.2, 'decay_type': 'sharp'},
-            'glass': {'base_duration': 0.4, 'variability': 0.2, 'decay_type': 'sharp'},
-            'gunshot': {'base_duration': 0.3, 'variability': 0.1, 'decay_type': 'instant'},
-            'slam': {'base_duration': 0.5, 'variability': 0.2, 'decay_type': 'sharp'},
-            'thud': {'base_duration': 0.6, 'variability': 0.3, 'decay_type': 'medium'},
-            
-            # Enhanced thud variants
-            'heavy_thud': {'base_duration': 0.8, 'variability': 0.2, 'decay_type': 'medium'},
-            'soft_thud': {'base_duration': 0.4, 'variability': 0.2, 'decay_type': 'soft'},
-            
-            # Crunch sounds - variable duration
-            'crunch': {'base_duration': 0.7, 'variability': 0.4, 'decay_type': 'medium'},
-            'crackle': {'base_duration': 1.2, 'variability': 0.5, 'decay_type': 'gradual'},
-            'break': {'base_duration': 0.5, 'variability': 0.2, 'decay_type': 'sharp'},
-            
-            # Combat/Fighting sounds - quick and punchy
-            'punch': {'base_duration': 0.3, 'variability': 0.1, 'decay_type': 'sharp'},
-            'hit': {'base_duration': 0.4, 'variability': 0.1, 'decay_type': 'sharp'},
-            'kick': {'base_duration': 0.4, 'variability': 0.1, 'decay_type': 'sharp'},
-            'sword': {'base_duration': 0.6, 'variability': 0.2, 'decay_type': 'medium'},
-            
-            # Gun/Weapon loading sounds - mechanical precision
-            'gun_load': {'base_duration': 0.3, 'variability': 0.1, 'decay_type': 'instant'},
-            'reload': {'base_duration': 0.4, 'variability': 0.1, 'decay_type': 'instant'},
-            'magazine': {'base_duration': 0.2, 'variability': 0.1, 'decay_type': 'instant'},
-            'bolt': {'base_duration': 0.3, 'variability': 0.1, 'decay_type': 'instant'},
-            
-            # Electronic/Mechanical - varies by type
-            'bell': {'base_duration': 1.5, 'variability': 0.5, 'decay_type': 'gradual'},
-            'buzz': {'base_duration': 1.0, 'variability': 0.3, 'decay_type': 'sustained'},
-            'beep': {'base_duration': 0.2, 'variability': 0.1, 'decay_type': 'instant'},
-            'click': {'base_duration': 0.1, 'variability': 0.05, 'decay_type': 'instant'},
-            'alarm': {'base_duration': 2.0, 'variability': 0.8, 'decay_type': 'sustained'},
-            
-            # Movement/Air sounds - flowing
-            'whoosh': {'base_duration': 1.0, 'variability': 0.4, 'decay_type': 'gradual'},
-            'pop': {'base_duration': 0.2, 'variability': 0.1, 'decay_type': 'instant'},
-            'whistle': {'base_duration': 1.5, 'variability': 0.6, 'decay_type': 'gradual'},
-            'siren': {'base_duration': 3.0, 'variability': 1.0, 'decay_type': 'sustained'},
-            'wind': {'base_duration': 2.0, 'variability': 1.0, 'decay_type': 'sustained'},
-            
-            # Water/Liquid sounds - varies by intensity
-            'splash': {'base_duration': 0.8, 'variability': 0.4, 'decay_type': 'medium'},
-            'drip': {'base_duration': 0.3, 'variability': 0.1, 'decay_type': 'soft'},
-            'pour': {'base_duration': 2.0, 'variability': 1.0, 'decay_type': 'sustained'},
-            'bubble': {'base_duration': 1.0, 'variability': 0.5, 'decay_type': 'gradual'},
-            
-            # Nature sounds - environmental
-            'thunder': {'base_duration': 2.5, 'variability': 1.0, 'decay_type': 'gradual'},
-            'rain': {'base_duration': 3.0, 'variability': 1.5, 'decay_type': 'sustained'},
-            'fire': {'base_duration': 2.0, 'variability': 0.8, 'decay_type': 'sustained'},
-            
-            # Animal sounds - characteristic durations
-            'dog': {'base_duration': 0.8, 'variability': 0.3, 'decay_type': 'sharp'},
-            'cat': {'base_duration': 1.0, 'variability': 0.4, 'decay_type': 'medium'},
-            'bird': {'base_duration': 0.5, 'variability': 0.3, 'decay_type': 'medium'},
-            'horse': {'base_duration': 1.2, 'variability': 0.4, 'decay_type': 'medium'},
-            'cow': {'base_duration': 1.5, 'variability': 0.5, 'decay_type': 'gradual'},
-            'pig': {'base_duration': 0.8, 'variability': 0.3, 'decay_type': 'medium'},
-            'sheep': {'base_duration': 1.0, 'variability': 0.3, 'decay_type': 'medium'},
-            'lion': {'base_duration': 2.0, 'variability': 0.8, 'decay_type': 'gradual'},
-            'bear': {'base_duration': 1.5, 'variability': 0.6, 'decay_type': 'gradual'},
-            'wolf': {'base_duration': 2.5, 'variability': 1.0, 'decay_type': 'gradual'},
-            'snake': {'base_duration': 1.0, 'variability': 0.4, 'decay_type': 'sustained'},
-            'insect': {'base_duration': 2.0, 'variability': 1.0, 'decay_type': 'sustained'},
-            'frog': {'base_duration': 0.6, 'variability': 0.2, 'decay_type': 'medium'},
-            
-            # Human sounds
-            'applause': {'base_duration': 3.0, 'variability': 1.5, 'decay_type': 'sustained'},
-            'footsteps': {'base_duration': 0.4, 'variability': 0.2, 'decay_type': 'sharp'},
-            'knock': {'base_duration': 0.3, 'variability': 0.1, 'decay_type': 'sharp'},
-            'sneeze': {'base_duration': 0.5, 'variability': 0.2, 'decay_type': 'sharp'},
-            'cough': {'base_duration': 0.4, 'variability': 0.2, 'decay_type': 'medium'},
-            'laugh': {'base_duration': 2.0, 'variability': 1.0, 'decay_type': 'sustained'},
-            'gasp': {'base_duration': 0.6, 'variability': 0.2, 'decay_type': 'medium'},
-            'whisper': {'base_duration': 1.5, 'variability': 0.8, 'decay_type': 'soft'},
-            
-            # Vehicle sounds
-            'car_horn': {'base_duration': 1.0, 'variability': 0.5, 'decay_type': 'sustained'},
-            'engine': {'base_duration': 2.0, 'variability': 1.0, 'decay_type': 'sustained'},
-            'brakes': {'base_duration': 1.5, 'variability': 0.6, 'decay_type': 'gradual'},
-            'tire': {'base_duration': 1.2, 'variability': 0.5, 'decay_type': 'gradual'},
-            'motorcycle': {'base_duration': 1.8, 'variability': 0.8, 'decay_type': 'sustained'},
-            'truck': {'base_duration': 2.5, 'variability': 1.0, 'decay_type': 'sustained'},
-            
-            # Food/Eating sounds
-            'chew': {'base_duration': 1.0, 'variability': 0.5, 'decay_type': 'sustained'},
-            'bite': {'base_duration': 0.3, 'variability': 0.1, 'decay_type': 'sharp'},
-            'slurp': {'base_duration': 0.8, 'variability': 0.3, 'decay_type': 'gradual'},
-            'sizzle': {'base_duration': 2.0, 'variability': 1.0, 'decay_type': 'sustained'},
-            'boil': {'base_duration': 3.0, 'variability': 1.5, 'decay_type': 'sustained'},
-            
-            # Technology sounds
-            'computer': {'base_duration': 0.3, 'variability': 0.1, 'decay_type': 'instant'},
-            'phone': {'base_duration': 1.0, 'variability': 0.4, 'decay_type': 'sustained'},
-            'camera': {'base_duration': 0.2, 'variability': 0.1, 'decay_type': 'instant'},
-            'printer': {'base_duration': 2.0, 'variability': 1.0, 'decay_type': 'sustained'},
-            
-            # Miscellaneous
-            'zipper': {'base_duration': 0.6, 'variability': 0.3, 'decay_type': 'gradual'},
-            'paper': {'base_duration': 0.5, 'variability': 0.3, 'decay_type': 'soft'},
-            'fabric': {'base_duration': 0.8, 'variability': 0.4, 'decay_type': 'soft'},
-            'door': {'base_duration': 1.0, 'variability': 0.4, 'decay_type': 'gradual'},
-            'spring': {'base_duration': 0.6, 'variability': 0.2, 'decay_type': 'medium'},
-            'rubber': {'base_duration': 0.4, 'variability': 0.2, 'decay_type': 'medium'}
-        }
+        # Sound duration characteristics imported from separate file
+        self.sound_duration_profiles = sound_duration_profiles
         
         self._load_yamnet_model()
     
@@ -298,17 +194,62 @@ class AIOnomatopoeiaDetector:
         
         return selected_word
     
-    def detect_sounds_in_chunk(self, audio_chunk, start_time, sample_rate=16000):
+    def find_sound_peak_in_chunk(self, audio_chunk, chunk_start_time, sample_rate=16000):
         """
-        Detect sounds with AI-determined duration (no filters or confidence thresholds).
+        Find the timing of the actual sound peak within the audio chunk.
         
         Args:
-            audio_chunk (np.array): Audio data
-            start_time (float): Start time of this chunk
+            audio_chunk (np.array): Audio data for the chunk
+            chunk_start_time (float): Start time of this chunk
             sample_rate (int): Audio sample rate
             
         Returns:
-            list: List of detected onomatopoeia events with AI-determined duration
+            float: Absolute timestamp of the sound peak
+        """
+        try:
+            # Calculate the RMS energy in small windows to find the peak
+            window_size = int(0.1 * sample_rate)  # 100ms windows
+            chunk_length = len(audio_chunk)
+            
+            if chunk_length < window_size:
+                # Chunk too short, just use the middle
+                return chunk_start_time + (chunk_length / sample_rate) / 2
+            
+            max_energy = 0
+            peak_sample = chunk_length // 2  # Default to middle if no clear peak
+            
+            # Slide window through chunk to find peak energy
+            for i in range(0, chunk_length - window_size, window_size // 2):
+                window = audio_chunk[i:i + window_size]
+                energy = np.sqrt(np.mean(window ** 2))  # RMS energy
+                
+                if energy > max_energy:
+                    max_energy = energy
+                    peak_sample = i + window_size // 2  # Middle of the window
+            
+            # Convert sample position to absolute time
+            peak_time_offset = peak_sample / sample_rate
+            absolute_peak_time = chunk_start_time + peak_time_offset
+            
+            return absolute_peak_time
+            
+        except Exception as e:
+            self.log_func(f"Error finding peak timing: {e}")
+            # Fallback to chunk middle
+            chunk_duration = len(audio_chunk) / sample_rate
+            return chunk_start_time + chunk_duration / 2
+    
+    def detect_sounds_in_chunk_with_timing(self, audio_chunk, chunk_start_time, sample_rate=16000):
+        """
+        Detect sounds with improved timing by finding the actual peak within the chunk.
+        
+        Args:
+            audio_chunk (np.array): Audio data
+            chunk_start_time (float): Start time of this chunk
+            sample_rate (int): Audio sample rate
+            
+        Returns:
+            list: List of detected onomatopoeia events with accurate timing
         """
         if self.yamnet_model is None or len(audio_chunk) == 0:
             return []
@@ -325,107 +266,99 @@ class AIOnomatopoeiaDetector:
             scores, embeddings, spectrogram = self.yamnet_model(audio_chunk)
             mean_scores = tf.reduce_mean(scores, axis=0)
             
-            # AI decides: Look at ALL predictions, not just high-confidence ones
-            # Get top 20 predictions to give AI more options
+            # AI decides: Look at top 5 predictions with higher selectivity
             top_indices = tf.nn.top_k(mean_scores, k=5).indices
-            
-            self.log_func(f"AI analyzing {len(top_indices)} sound possibilities at {start_time:.1f}s:")
-            
+                        
             for i, idx in enumerate(top_indices):
                 confidence = float(mean_scores[idx])
                 class_name = self.class_names[idx]
                 
-                # AI decision: Consider ANY detected sound, regardless of confidence
-                # The AI will determine if it's worth creating an onomatopoeia
-                if confidence > 0.2:  # Only filter out completely irrelevant sounds
-                    
-                    # Check if this class maps to our onomatopoeia
-                    sound_class = None
-                    for yamnet_class, mapped_class in YAMNET_CLASS_MAPPINGS.items():
-                        if yamnet_class.lower() in class_name.lower():
-                            sound_class = mapped_class
+                # Much higher minimum confidence threshold
+                if confidence < 0.20:  # Was 0.01, now 0.20
+                    continue
+                
+                # Check if this class maps to our onomatopoeia
+                sound_class = None
+                for yamnet_class, mapped_class in YAMNET_CLASS_MAPPINGS.items():
+                    if yamnet_class.lower() in class_name.lower():
+                        sound_class = mapped_class
+                        break
+                
+                # Check for partial matches
+                if not sound_class:
+                    explosion_terms = ['explosion', 'blast', 'boom', 'bang', 'gunshot', 'crash']
+                    for term in explosion_terms:
+                        if term in class_name.lower():
+                            sound_class = 'explosion'
                             break
                     
-                    # Check for partial matches
                     if not sound_class:
-                        explosion_terms = ['explosion', 'blast', 'boom', 'bang', 'gunshot', 'crash']
-                        for term in explosion_terms:
+                        impact_terms = ['thud', 'slam', 'break', 'crash', 'smash']
+                        for term in impact_terms:
                             if term in class_name.lower():
-                                sound_class = 'explosion'
+                                sound_class = 'crash'
                                 break
-                        
-                        if not sound_class:
-                            impact_terms = ['thud', 'slam', 'break', 'crash', 'smash']
-                            for term in impact_terms:
-                                if term in class_name.lower():
-                                    sound_class = 'crash'
-                                    break
+                
+                if sound_class:                   
+                    base_threshold = AI_THRESHOLDS.get(sound_class, 0.40)  # Default was 0.15, now 0.40
                     
-                    if sound_class:
-                        # AI determines if this sound should generate an onomatopoeia
-                        # Factors: sound type, confidence, position in ranking
+                    # Steeper ranking penalty - position matters much more
+                    ai_decision_score = confidence * (1.0 - (i * 0.20))  # Was 0.05, now 0.20
+                    
+                    # Apply sensitivity with more aggressive scaling
+                    ai_threshold = base_threshold * (0.5 + (self.ai_sensitivity * 0.5))
+                    
+                    if ai_decision_score >= ai_threshold:
+                        # Find the actual peak timing within this chunk
+                        peak_time = self.find_sound_peak_in_chunk(audio_chunk, chunk_start_time, sample_rate)
                         
-                        ai_decision_score = confidence * (1.0 - (i * 0.20))
+                        # AI decides to create onomatopoeia
+                        onomatopoeia = self.get_onomatopoeia_word(sound_class)
                         
-                        # AI threshold: Dynamic based on sound type and sensitivity
-                        ai_thresholds = {
-                            'explosion': 0.25,    # Was 0.05, now 5x higher - only very clear explosions
-                            'crash': 0.30,        # Was 0.08, now ~4x higher
-                            'glass': 0.35,        # Was 0.10, now 3.5x higher
-                            'gunshot': 0.25,      # Was 0.05, now 5x higher
-                            'slam': 0.40,         # Was 0.12, now ~3x higher
-                            'thud': 0.45,         # Was 0.15, now 3x higher
-                            'punch': 0.30,        # Was 0.08, now ~4x higher
-                            'bell': 0.50,         # Was 0.20, now 2.5x higher
-                            'alarm': 0.60,        # Was 0.25, now 2.4x higher
-                        }
-                        
-                        base_threshold = ai_thresholds.get(sound_class, 0.4)
-                        
-                        # Apply sensitivity: lower sensitivity = lower threshold (more permissive)
-                        # Higher sensitivity = higher threshold (more selective)
-                        ai_threshold = base_threshold * (0.5 + (self.ai_sensitivity * 0.5))  #
-                        
-                        if ai_decision_score >= ai_threshold:
-                            # AI decides to create onomatopoeia
-                            onomatopoeia = self.get_onomatopoeia_word(sound_class)
+                        if onomatopoeia:
+                            # AI determines duration naturally
+                            ai_duration = self.ai_determine_duration(sound_class, confidence)
                             
-                            if onomatopoeia:
-                                # AI determines duration naturally
-                                ai_duration = self.ai_determine_duration(sound_class, confidence)
-                                
-                                event = {
-                                    'word': onomatopoeia,
-                                    'start_time': start_time,
-                                    'end_time': start_time + ai_duration,  # AI-determined duration
-                                    'confidence': confidence,
-                                    'energy': confidence,  # Use confidence as energy for sizing
-                                    'detected_class': class_name,
-                                    'ai_duration': ai_duration,
-                                    'ai_decision_score': ai_decision_score
-                                }
-                                detected_events.append(event)
-                                
-                                self.log_func(f"AI CREATED ONOMATOPOEIA: {onomatopoeia} "
-                                             f"(duration: {ai_duration:.1f}s, confidence: {confidence:.3f}, "
-                                             f"decision_score: {ai_decision_score:.3f})")
-                                break  # Only one onomatopoeia per chunk
+                            event = {
+                                'word': onomatopoeia,
+                                'start_time': peak_time,  # Use detected peak time instead of chunk start
+                                'end_time': peak_time + ai_duration,
+                                'confidence': confidence,
+                                'energy': confidence,
+                                'detected_class': class_name,
+                                'ai_duration': ai_duration,
+                                'ai_decision_score': ai_decision_score,
+                                'chunk_start': chunk_start_time  # Keep for debugging
+                            }
+                            detected_events.append(event)
+                            
+                            self.log_func(f"AI CREATED ONOMATOPOEIA: {onomatopoeia} "
+                                         f"(peak at {peak_time:.1f}s, duration: {ai_duration:.1f}s, "
+                                         f"confidence: {confidence:.3f}, chunk: {chunk_start_time:.1f}s)")
+                            break  # Only one onomatopoeia per chunk
             
         except Exception as e:
             self.log_func(f"Error in AI sound detection: {e}")
         
         return detected_events
     
-    def analyze_audio_file(self, audio_path, chunk_duration=1.0):
+    def analyze_audio_file(self, audio_path, chunk_duration=3.0, step_size=1.0):
         """
-        Analyze entire audio file with AI-determined durations.
+        Main method - now uses overlapping chunks by default.
+        """
+        return self.analyze_audio_file_with_overlapping_chunks(audio_path, chunk_duration, step_size)
+    
+    def analyze_audio_file_with_overlapping_chunks(self, audio_path, chunk_duration=3.0, step_size=1.0):
+        """
+        Analyze entire audio file with overlapping chunks for better sound detection.
         
         Args:
             audio_path (str): Path to audio file
-            chunk_duration (float): Analysis chunk duration
+            chunk_duration (float): Duration of each analysis chunk (3 seconds)
+            step_size (float): Time between chunk starts (1 second)
             
         Returns:
-            list: All detected onomatopoeia events with AI durations
+            list: All detected onomatopoeia events with accurate timing
         """
         if self.yamnet_model is None:
             self.log_func("AI Onomatopoeia system not available")
@@ -436,7 +369,8 @@ class AIOnomatopoeiaDetector:
             return []
         
         try:
-            self.log_func(f"AI analyzing audio for natural onomatopoeia durations: {audio_path}")
+            self.log_func(f"AI analyzing audio with overlapping chunks: {audio_path}")
+            self.log_func(f"Chunk duration: {chunk_duration}s, Step size: {step_size}s")
             
             # Load audio
             audio, sr = librosa.load(audio_path, sr=16000)
@@ -445,27 +379,49 @@ class AIOnomatopoeiaDetector:
                 self.log_func("Audio file is empty")
                 return []
             
-            self.log_func(f"Audio loaded: {len(audio)/sr:.2f} seconds - AI will determine all durations naturally")
+            audio_duration = len(audio) / sr
+            self.log_func(f"Audio loaded: {audio_duration:.2f} seconds")
             
-            # Process in chunks
+            # Calculate overlapping chunks
             chunk_samples = int(chunk_duration * sr)
-            all_events = []
+            step_samples = int(step_size * sr)
             
-            for i in range(0, len(audio), chunk_samples):
-                chunk = audio[i:i + chunk_samples]
-                start_time = i / sr
+            all_events = []
+            chunk_count = 0
+            
+            # Process overlapping chunks
+            for start_sample in range(0, len(audio) - chunk_samples + 1, step_samples):
+                chunk = audio[start_sample:start_sample + chunk_samples]
+                start_time = start_sample / sr
                 
-                # AI analyzes this chunk
-                events = self.detect_sounds_in_chunk(chunk, start_time, sr)
+                # Skip if we've gone past the audio
+                if start_time >= audio_duration:
+                    break
+                
+                chunk_count += 1
+                
+                # AI analyzes this chunk with improved timing
+                events = self.detect_sounds_in_chunk_with_timing(chunk, start_time, sr)
                 all_events.extend(events)
             
-            self.log_func(f"AI onomatopoeia analysis complete: {len(all_events)} events with natural durations")
+            self.log_func(f"AI onomatopoeia analysis complete: {len(all_events)} events from {chunk_count} overlapping chunks")
             
-            # Show AI's duration decisions
+            # Show AI's timing improvements
             if all_events:
                 total_duration = sum(event['ai_duration'] for event in all_events)
                 avg_duration = total_duration / len(all_events)
                 self.log_func(f"AI duration statistics: avg={avg_duration:.1f}s, total={total_duration:.1f}s")
+                
+                # Show timing accuracy info
+                timing_offsets = []
+                for event in all_events:
+                    if 'chunk_start' in event:
+                        offset = event['start_time'] - event['chunk_start']
+                        timing_offsets.append(offset)
+                
+                if timing_offsets:
+                    avg_offset = sum(timing_offsets) / len(timing_offsets)
+                    self.log_func(f"Timing accuracy: avg peak offset from chunk start = {avg_offset:.2f}s")
             
             return all_events
             
@@ -473,11 +429,53 @@ class AIOnomatopoeiaDetector:
             self.log_func(f"Error in AI audio analysis: {e}")
             return []
 
+    def generate_srt_content(self, events):
+        """
+        Generate SRT subtitle content from onomatopoeia events.
+        Uses the exact same format as the desktop subtitles.
+        
+        Args:
+            events (list): List of onomatopoeia events
+            
+        Returns:
+            str: SRT formatted content
+        """
+        if not events:
+            return ""
+        
+        srt_content = []
+        
+        for i, event in enumerate(events, 1):
+            start_time = event['start_time']
+            end_time = event['end_time']
+            word = event['word']
+            
+            # Format timestamps for SRT (same format as subtitle_converter.py)
+            start_formatted = self._format_srt_time(start_time)
+            end_formatted = self._format_srt_time(end_time)
+            
+            # Use exact same format as other SRT files
+            srt_content.append(f"{i}")
+            srt_content.append(f"{start_formatted} --> {end_formatted}")
+            srt_content.append(f"{word}")
+            srt_content.append("")  # Empty line between entries
+        
+        return "\n".join(srt_content)
+    
+    def _format_srt_time(self, seconds):
+        """Format time in seconds to SRT format: HH:MM:SS,mmm (same as subtitle_converter.py)"""
+        millis = int((seconds - int(seconds)) * 1000)
+        seconds = int(seconds)
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        seconds = seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+
 
 # Integration function to replace the original detector
 def create_ai_onomatopoeia_srt(audio_path, output_srt_path, log_func=None, use_animation=True, animation_setting="Random"):
     """
-    Create onomatopoeia subtitle file using AI-determined durations.
+    Create onomatopoeia subtitle file using AI-determined durations with overlapping chunks.
     
     Args:
         audio_path (str): Path to audio file
@@ -491,11 +489,11 @@ def create_ai_onomatopoeia_srt(audio_path, output_srt_path, log_func=None, use_a
     """
     try:
         if log_func:
-            log_func("Using AI-determined onomatopoeia durations (no filters or thresholds)")
+            log_func("Using AI-determined onomatopoeia with overlapping chunks for better detection")
         
-        # Use the AI detector instead of the original
+        # Use the AI detector with overlapping chunks
         ai_detector = AIOnomatopoeiaDetector(log_func=log_func)
-        events = ai_detector.analyze_audio_file(audio_path)
+        events = ai_detector.analyze_audio_file(audio_path)  # Now uses 3s chunks with 1s steps by default
         
         if not events:
             if log_func:
@@ -508,7 +506,7 @@ def create_ai_onomatopoeia_srt(audio_path, output_srt_path, log_func=None, use_a
                 # Change to .ass for animated version
                 ass_path = os.path.splitext(output_srt_path)[0] + '.ass'
                 
-                # Create ASS file with AI-determined durations
+                # Create ASS file with AI-determined durations and timing
                 success = create_animated_ass_from_events(events, ass_path, animation_setting, log_func)
                 return success, events
                 
@@ -517,14 +515,14 @@ def create_ai_onomatopoeia_srt(audio_path, output_srt_path, log_func=None, use_a
                     log_func("Animation module not available, using static SRT")
                 use_animation = False
         
-        # Create static SRT with AI durations
+        # Create static SRT with AI durations and improved timing
         if not use_animation:
             srt_content = ai_detector.generate_srt_content(events)
             with open(output_srt_path, 'w', encoding='utf-8') as f:
                 f.write(srt_content)
             
             if log_func:
-                log_func(f"AI onomatopoeia SRT created: {len(events)} events with natural durations")
+                log_func(f"AI onomatopoeia SRT created: {len(events)} events with improved timing")
             return True, events
             
     except Exception as e:
@@ -545,7 +543,7 @@ def create_animated_ass_from_events(events, output_path, animation_setting, log_
             f.write(animated_content)
         
         if log_func:
-            log_func(f"AI animated ASS created: {output_path} with {len(events)} naturally-timed events")
+            log_func(f"AI animated ASS created: {output_path} with {len(events)} precisely-timed events")
         
         return True
         
