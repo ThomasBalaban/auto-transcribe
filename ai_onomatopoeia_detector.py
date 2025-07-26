@@ -327,7 +327,7 @@ class AIOnomatopoeiaDetector:
             
             # AI decides: Look at ALL predictions, not just high-confidence ones
             # Get top 20 predictions to give AI more options
-            top_indices = tf.nn.top_k(mean_scores, k=20).indices
+            top_indices = tf.nn.top_k(mean_scores, k=5).indices
             
             self.log_func(f"AI analyzing {len(top_indices)} sound possibilities at {start_time:.1f}s:")
             
@@ -337,7 +337,7 @@ class AIOnomatopoeiaDetector:
                 
                 # AI decision: Consider ANY detected sound, regardless of confidence
                 # The AI will determine if it's worth creating an onomatopoeia
-                if confidence > 0.01:  # Only filter out completely irrelevant sounds
+                if confidence > 0.2:  # Only filter out completely irrelevant sounds
                     
                     # Check if this class maps to our onomatopoeia
                     sound_class = None
@@ -365,26 +365,26 @@ class AIOnomatopoeiaDetector:
                         # AI determines if this sound should generate an onomatopoeia
                         # Factors: sound type, confidence, position in ranking
                         
-                        ai_decision_score = confidence * (1.0 - (i * 0.05))  # Lower rank = lower score
+                        ai_decision_score = confidence * (1.0 - (i * 0.20))
                         
                         # AI threshold: Dynamic based on sound type and sensitivity
                         ai_thresholds = {
-                            'explosion': 0.05,  # AI loves explosions
-                            'crash': 0.08,
-                            'glass': 0.10,
-                            'gunshot': 0.05,
-                            'slam': 0.12,
-                            'thud': 0.15,
-                            'punch': 0.08,
-                            'bell': 0.20,
-                            'alarm': 0.25,
+                            'explosion': 0.25,    # Was 0.05, now 5x higher - only very clear explosions
+                            'crash': 0.30,        # Was 0.08, now ~4x higher
+                            'glass': 0.35,        # Was 0.10, now 3.5x higher
+                            'gunshot': 0.25,      # Was 0.05, now 5x higher
+                            'slam': 0.40,         # Was 0.12, now ~3x higher
+                            'thud': 0.45,         # Was 0.15, now 3x higher
+                            'punch': 0.30,        # Was 0.08, now ~4x higher
+                            'bell': 0.50,         # Was 0.20, now 2.5x higher
+                            'alarm': 0.60,        # Was 0.25, now 2.4x higher
                         }
                         
-                        base_threshold = ai_thresholds.get(sound_class, 0.15)
+                        base_threshold = ai_thresholds.get(sound_class, 0.4)
                         
                         # Apply sensitivity: lower sensitivity = lower threshold (more permissive)
                         # Higher sensitivity = higher threshold (more selective)
-                        ai_threshold = base_threshold * self.ai_sensitivity
+                        ai_threshold = base_threshold * (0.5 + (self.ai_sensitivity * 0.5))  #
                         
                         if ai_decision_score >= ai_threshold:
                             # AI decides to create onomatopoeia
