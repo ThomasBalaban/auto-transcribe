@@ -272,80 +272,50 @@ class TestDialogs:
     
     @staticmethod
     def test_onomatopoeia(app):
-        """Test AI onomatopoeia detection system."""
+        """Test modern CLAP + LLM onomatopoeia detection system."""
         try:
             app.log("="*50)
-            app.log("TESTING AI ONOMATOPOEIA DETECTION SYSTEM")
+            app.log("TESTING MODERN ONOMATOPOEIA DETECTION SYSTEM")
             app.log("="*50)
             
-            # Check TensorFlow
+            # Check PyTorch (required for modern system)
             try:
-                import tensorflow as tf
-                app.log(f"✓ TensorFlow found (version: {tf.__version__})")
+                import torch
+                app.log(f"✓ PyTorch found (version: {torch.__version__})")
             except ImportError:
-                app.log("✗ TensorFlow not found")
-                messagebox.showerror("Missing Dependency", "TensorFlow is required for AI onomatopoeia detection.")
+                app.log("✗ PyTorch not found")
+                messagebox.showerror("Missing Dependency", "PyTorch is required.\n\nInstall: pip install torch transformers")
                 return
             
-            # Check TensorFlow Hub
+            # Check Transformers
             try:
-                import tensorflow_hub as hub
-                app.log("✓ TensorFlow Hub found")
+                import transformers
+                app.log(f"✓ Transformers found (version: {transformers.__version__})")
             except ImportError:
-                app.log("✗ TensorFlow Hub not found")
-                messagebox.showerror("Missing Dependency", "TensorFlow Hub is required.")
+                app.log("✗ Transformers not found")
+                messagebox.showerror("Missing Dependency", "Transformers required.\n\nInstall: pip install transformers")
                 return
             
-            # Test AI system
-            from ai_onomatopoeia_detector import AIOnomatopoeiaDetector
-            ai_detector = AIOnomatopoeiaDetector(log_func=app.log)
+            # Test modern system
+            from modern_onomatopoeia_detector import ModernOnomatopoeiaDetector
+            detector = ModernOnomatopoeiaDetector(log_func=app.log)
             
-            animation_type = app.animation_var.get()
-            app.log(f"Animation Type: {animation_type}")
-            app.log("AI Decision Mode: ACTIVE (no confidence thresholds)")
-            
-            # Show available animations
-            try:
-                from animations import OnomatopoeiaAnimator
-                all_animations = OnomatopoeiaAnimator.get_all_animation_types()
-                app.log(f"Available Animation Styles ({len(all_animations)}):")
-                for i, anim in enumerate(all_animations, 1):
-                    app.log(f"  {i}. {anim.replace('_', ' ').title()}")
-            except ImportError:
-                app.log("Animation system not available")
-            
-            # Show AI duration profiles
-            app.log(f"AI Sound Duration Profiles ({len(ai_detector.sound_duration_profiles)}):")
-            for sound_type, profile in list(ai_detector.sound_duration_profiles.items())[:5]:
-                app.log(f"  {sound_type}: {profile['base_duration']:.1f}s base, {profile['decay_type']} decay")
-            
-            if ai_detector.yamnet_model is None:
-                app.log("❌ AI ONOMATOPOEIA STATUS: NOT AVAILABLE")
-                messagebox.showerror(
-                    "AI Test Failed",
-                    "❌ YAMNet model could not be loaded.\n\nCheck network connection and dependencies."
-                )
-            else:
-                app.log("🎉 AI ONOMATOPOEIA STATUS: FULLY OPERATIONAL")
-                app.log(f"   YAMNet model loaded with {len(ai_detector.class_names)} sound classes")
-                app.log(f"   AI will analyze ALL sounds and determine durations naturally")
-                app.log("   No confidence filtering - pure AI decision making")
+            if detector.clap_model and detector.llm_model:
+                app.log("🎉 MODERN SYSTEM STATUS: FULLY OPERATIONAL")
+                app.log("✅ CLAP + LLM pipeline ready")
+                app.log("✅ No legacy dependencies")
                 
                 messagebox.showinfo(
-                    "AI Onomatopoeia Test Successful",
-                    f"✓ AI Onomatopoeia system is fully operational!\n\n"
-                    f"• YAMNet model loaded successfully\n"
-                    f"• {len(ai_detector.class_names)} sound classes available\n"
-                    f"• {len(ai_detector.sound_duration_profiles)} AI duration profiles\n"
-                    f"• Animation type: {animation_type}\n"
-                    f"• AI Decision Mode: Active\n"
-                    f"• No confidence thresholds or filters\n"
-                    f"• Natural duration determination enabled!"
+                    "Modern System Test Successful",
+                    "✅ Modern CLAP + LLM system operational!\n\n"
+                    "🔬 Two-stage AI pipeline ready\n"
+                    "🚀 No legacy YAMNet dependencies\n"
+                    "💡 Creative contextual sound effects"
                 )
-            
-            app.log("="*50)
-            
+            else:
+                app.log("⚠️ System partially loaded")
+                messagebox.showwarning("Partial Load", "⚠️ System partially loaded - check logs")
+                
         except Exception as e:
-            error_msg = f"Error testing AI onomatopoeia system: {e}"
-            app.log(error_msg)
-            messagebox.showerror("AI Test Error", error_msg)
+            app.log(f"❌ Error: {e}")
+            messagebox.showerror("Test Failed", f"❌ {e}")

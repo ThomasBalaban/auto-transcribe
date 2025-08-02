@@ -9,3 +9,6 @@ whisperx
 torch
 torchaudio
 numpy
+transformers
+accelerate
+datasets
