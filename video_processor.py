@@ -85,36 +85,31 @@ class VideoProcessor:
     
     @staticmethod
     def process_onomatopoeia(track3_audio_path, temp_dir, animation_setting, ai_sensitivity, log_func):
-        """Process onomatopoeia detection with AI-determined durations."""
+        """Process onomatopoeia detection with modern CLAP + LLM system."""
         onomatopoeia_srt_path = os.path.join(temp_dir, "onomatopoeia_subtitles.srt")
         
         if not track3_audio_path or not os.path.exists(track3_audio_path):
             log_func("Onomatopoeia detection: No desktop audio available")
             return None, []
         
-        log_func("\n=== AI ONOMATOPOEIA PROCESSING ===")
-        log_func("Using AI to determine all onomatopoeia timing naturally")
+        log_func("\n=== MODERN ONOMATOPOEIA PROCESSING ===")
+        log_func("Using CLAP audio captioning + local LLM generation")
         log_func(f"Animation type: {animation_setting}")
-        log_func(f"AI Sensitivity: {ai_sensitivity} (higher = more selective)")
-        log_func("No confidence filters or energy thresholds applied")
+        log_func(f"Detection sensitivity: {ai_sensitivity}")
         
         try:
-            # Import here to pass the AI sensitivity
-            from modern_onomatopoeia_detector import ModernOnomatopoeiaDetector as AIOnomatopoeiaDetector
+            from modern_onomatopoeia_detector import ModernOnomatopoeiaDetector
             
-            # Create AI detector with sensitivity
-            ai_detector = AIOnomatopoeiaDetector(sensitivity=ai_sensitivity, log_func=log_func)
-            events = ai_detector.analyze_audio_file(track3_audio_path)
+            detector = ModernOnomatopoeiaDetector(sensitivity=ai_sensitivity, log_func=log_func)
+            events = detector.analyze_audio_file(track3_audio_path)
             
             if not events:
-                log_func("AI determined no onomatopoeia events should be created")
+                log_func("Modern system found no onomatopoeia events")
                 return None, []
             
             # Create animated or static version
             try:
                 from animations.core import OnomatopoeiaAnimator
-                log_func(f"Creating AI-timed animated effects (ASS format) - {animation_setting}")
-                
                 ass_path = os.path.splitext(onomatopoeia_srt_path)[0] + '.ass'
                 animator = OnomatopoeiaAnimator()
                 animated_content = animator.generate_animated_ass_content(events, animation_setting)
@@ -122,39 +117,21 @@ class VideoProcessor:
                 with open(ass_path, 'w', encoding='utf-8') as f:
                     f.write(animated_content)
                 
-                onomatopoeia_file_path = ass_path
-                log_func(f"✓ AI Animated Onomatopoeia: {len(events)} events (ASS format)")
+                log_func(f"✓ Modern Animated Effects: {len(events)} events")
+                return ass_path, events
                 
             except ImportError:
-                log_func("Animation module not available, creating static SRT")
-                srt_content = ai_detector.generate_srt_content(events)
+                srt_content = detector.generate_srt_content(events)
                 with open(onomatopoeia_srt_path, 'w', encoding='utf-8') as f:
                     f.write(srt_content)
-                onomatopoeia_file_path = onomatopoeia_srt_path
-                log_func(f"✓ AI Static Onomatopoeia: {len(events)} events (SRT format)")
-            
-            # Show AI's decisions
-            total_duration = sum(event['end_time'] - event['start_time'] for event in events)
-            avg_duration = total_duration / len(events)
-            
-            log_func(f"AI Duration Analysis:")
-            log_func(f"  Average duration: {avg_duration:.1f}s")
-            log_func(f"  Total effect time: {total_duration:.1f}s")
-            
-            # Show examples of AI decisions
-            for i, event in enumerate(events[:3]):
-                duration = event['end_time'] - event['start_time']
-                ai_score = event.get('ai_decision_score', 0)
-                log_func(f"  Example {i+1}: '{event['word']}' - {duration:.1f}s @ {event['start_time']:.1f}s (AI score: {ai_score:.3f})")
-            
-            return onomatopoeia_file_path, events
                 
+                log_func(f"✓ Modern Static Effects: {len(events)} events")
+                return onomatopoeia_srt_path, events
+                    
         except Exception as e:
-            log_func(f"AI Onomatopoeia processing failed: {e}")
-            log_func("Continuing without comic book effects...")
+            log_func(f"Modern onomatopoeia processing failed: {e}")
             return None, []
 
-    
     @staticmethod
     def process_single_video(input_file, output_file, model_path, device, ai_sensitivity, animation_setting, log_func):
         """Process a single video file with AI-determined onomatopoeia."""

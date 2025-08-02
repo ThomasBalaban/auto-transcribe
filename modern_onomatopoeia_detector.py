@@ -8,6 +8,7 @@ import random
 import numpy as np
 import librosa
 import torch
+from typing import List, Dict, Optional, Tuple
 from transformers import ClapModel, ClapProcessor, AutoTokenizer, AutoModelForCausalLM
 from typing import List, Dict, Optional, Tuple
 import warnings
@@ -49,7 +50,6 @@ class ModernOnomatopoeiaDetector:
         # Initialize models
         self._load_models()
         
-
     def _load_models(self):
         """Load CLAP and LLM models - FORCED CPU for CLAP compatibility."""
         try:
@@ -557,6 +557,85 @@ def test_modern_system():
     except Exception as e:
         print(f"❌ Modern system failed: {e}")
         return False
+
+
+def create_modern_onomatopoeia_srt(audio_path: str, 
+                                output_srt_path: str, 
+                                sensitivity: float = 0.5,
+                                animation_setting: str = "Random",
+                                log_func=None,
+                                use_animation: bool = True) -> Tuple[bool, List[Dict]]:
+    """
+    Create onomatopoeia subtitle file using modern CLAP + LLM pipeline.
+    
+    Args:
+        audio_path: Path to audio file
+        output_srt_path: Output subtitle file path  
+        sensitivity: Detection sensitivity (0.1-0.9)
+        animation_setting: Animation type for ASS output
+        log_func: Logging function
+        use_animation: Whether to create animated ASS file
+        
+    Returns:
+        (success, events) tuple
+    """
+    try:
+        if log_func:
+            log_func("=== MODERN ONOMATOPOEIA SYSTEM ===")
+            log_func("Using CLAP audio captioning + local LLM generation")
+        
+        # Create detector
+        detector = ModernOnomatopoeiaDetector(
+            sensitivity=sensitivity,
+            log_func=log_func
+        )
+        
+        # Analyze audio
+        events = detector.analyze_audio_file(audio_path)
+        
+        if not events:
+            if log_func:
+                log_func("No onomatopoeia events detected")
+            return False, []
+        
+        # Create output
+        if use_animation:
+            try:
+                # Try to create animated ASS file
+                from animations.core import OnomatopoeiaAnimator
+                
+                ass_path = os.path.splitext(output_srt_path)[0] + '.ass'
+                animator = OnomatopoeiaAnimator()
+                animated_content = animator.generate_animated_ass_content(events, animation_setting)
+                
+                with open(ass_path, 'w', encoding='utf-8') as f:
+                    f.write(animated_content)
+                
+                if log_func:
+                    log_func(f"Modern animated onomatopoeia created: {len(events)} events")
+                
+                return True, events
+                
+            except ImportError:
+                if log_func:
+                    log_func("Animation module not available, creating static SRT")
+                use_animation = False
+        
+        if not use_animation:
+            # Create static SRT
+            srt_content = detector.generate_srt_content(events)
+            with open(output_srt_path, 'w', encoding='utf-8') as f:
+                f.write(srt_content)
+            
+            if log_func:
+                log_func(f"Modern static onomatopoeia created: {len(events)} events")
+            
+            return True, events
+            
+    except Exception as e:
+        if log_func:
+            log_func(f"Error in modern onomatopoeia system: {e}")
+        return False, []
 
 
 if __name__ == "__main__":

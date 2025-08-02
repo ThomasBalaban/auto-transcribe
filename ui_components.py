@@ -282,16 +282,9 @@ class TestDialogs:
             try:
                 import torch
                 app.log(f"✓ PyTorch found (version: {torch.__version__})")
-                
-                if torch.backends.mps.is_available():
-                    app.log("✓ Apple Silicon GPU (MPS) available")
-                elif torch.cuda.is_available():
-                    app.log(f"✓ NVIDIA GPU (CUDA) available")
-                else:
-                    app.log("✓ CPU mode available")
             except ImportError:
                 app.log("✗ PyTorch not found")
-                messagebox.showerror("Missing Dependency", "PyTorch is required for the modern onomatopoeia system.\n\nInstall with: pip install torch transformers")
+                messagebox.showerror("Missing Dependency", "PyTorch is required.\n\nInstall: pip install torch transformers")
                 return
             
             # Check Transformers
@@ -300,115 +293,29 @@ class TestDialogs:
                 app.log(f"✓ Transformers found (version: {transformers.__version__})")
             except ImportError:
                 app.log("✗ Transformers not found")
-                messagebox.showerror("Missing Dependency", "Transformers library is required.\n\nInstall with: pip install transformers")
+                messagebox.showerror("Missing Dependency", "Transformers required.\n\nInstall: pip install transformers")
                 return
             
             # Test modern system
-            app.log("\nInitializing modern CLAP + LLM system...")
+            from modern_onomatopoeia_detector import ModernOnomatopoeiaDetector
+            detector = ModernOnomatopoeiaDetector(log_func=app.log)
             
-            try:
-                from modern_onomatopoeia_detector import ModernOnomatopoeiaDetector
+            if detector.clap_model and detector.llm_model:
+                app.log("🎉 MODERN SYSTEM STATUS: FULLY OPERATIONAL")
+                app.log("✅ CLAP + LLM pipeline ready")
+                app.log("✅ No legacy dependencies")
                 
-                # Create detector (this will download models if needed)
-                ai_detector = ModernOnomatopoeiaDetector(log_func=app.log)
-                
-                animation_type = app.animation_var.get()
-                sensitivity = float(app.confidence_var.get())
-                
-                app.log(f"\nSystem Configuration:")
-                app.log(f"  Animation Type: {animation_type}")
-                app.log(f"  Detection Sensitivity: {sensitivity}")
-                app.log(f"  Audio Sample Rate: {ai_detector.sample_rate}Hz")
-                app.log(f"  Chunk Duration: {ai_detector.chunk_duration}s")
-                app.log(f"  Processing Device: {ai_detector.device}")
-                
-                # Show available animations
-                try:
-                    from animations import OnomatopoeiaAnimator
-                    all_animations = OnomatopoeiaAnimator.get_all_animation_types()
-                    app.log(f"\nAvailable Animation Styles ({len(all_animations)}):")
-                    for i, anim in enumerate(all_animations, 1):
-                        display_name = anim.replace('_', ' ').title()
-                        app.log(f"  {i}. {display_name}")
-                except ImportError:
-                    app.log("\n⚠️ Animation system not available")
-                
-                # Check model loading status
-                models_loaded = []
-                if ai_detector.clap_model is not None:
-                    models_loaded.append("CLAP Audio Captioning")
-                if ai_detector.llm_model is not None:
-                    models_loaded.append("Local LLM Generation")
-                
-                if len(models_loaded) == 2:
-                    app.log("\n🎉 MODERN ONOMATOPOEIA STATUS: FULLY OPERATIONAL")
-                    app.log("✅ All models loaded successfully")
-                    app.log(f"✅ Models loaded: {', '.join(models_loaded)}")
-                    app.log("✅ Two-stage AI pipeline ready:")
-                    app.log("   Stage 1: CLAP converts audio → natural language description")
-                    app.log("   Stage 2: Local LLM converts description → comic sound effect")
-                    app.log("✅ No hardcoded categories - unlimited creative potential")
-                    app.log("✅ Context-aware onomatopoeia generation")
-                    
-                    messagebox.showinfo(
-                        "Modern Onomatopoeia Test Successful",
-                        f"✅ Modern CLAP + LLM system is fully operational!\n\n"
-                        f"🔬 Two-stage AI pipeline:\n"
-                        f"  • Stage 1: CLAP audio captioning\n"
-                        f"  • Stage 2: Local LLM generation\n\n"
-                        f"⚙️ Configuration:\n"
-                        f"  • Animation: {animation_type}\n"
-                        f"  • Sensitivity: {sensitivity}\n"
-                        f"  • Device: {ai_detector.device}\n\n"
-                        f"🚀 Features:\n"
-                        f"  • No category limitations\n"
-                        f"  • Natural language descriptions\n"
-                        f"  • Creative contextual sound effects\n"
-                        f"  • Modern 2023+ AI models"
-                    )
-                else:
-                    app.log("\n❌ MODERN ONOMATOPOEIA STATUS: PARTIALLY LOADED")
-                    app.log(f"⚠️ Only {len(models_loaded)}/2 models loaded")
-                    if ai_detector.clap_model is None:
-                        app.log("❌ CLAP model failed to load")
-                    if ai_detector.llm_model is None:
-                        app.log("❌ LLM model failed to load")
-                    
-                    messagebox.showerror(
-                        "Modern System Partially Failed",
-                        f"⚠️ Only {len(models_loaded)}/2 models loaded successfully.\n\n"
-                        f"Check the log for details and ensure you have:\n"
-                        f"• Stable internet connection for model downloads\n"
-                        f"• Sufficient disk space (~2GB for models)\n"
-                        f"• No firewall blocking Hugging Face downloads"
-                    )
-                
-            except Exception as e:
-                app.log(f"\n❌ MODERN SYSTEM INITIALIZATION FAILED")
-                app.log(f"Error: {e}")
-                
-                # Check if it's a specific known issue
-                error_str = str(e).lower()
-                if "not a valid model identifier" in error_str:
-                    suggestion = "Model identifier issue - check internet connection"
-                elif "disk" in error_str or "space" in error_str:
-                    suggestion = "Insufficient disk space - need ~2GB for models"
-                elif "token" in error_str or "permission" in error_str:
-                    suggestion = "Model access issue - try different internet connection"
-                else:
-                    suggestion = "Check dependencies: pip install torch transformers torchaudio"
-                
-                messagebox.showerror(
-                    "Modern System Test Failed",
-                    f"❌ Modern onomatopoeia system failed to initialize.\n\n"
-                    f"Error: {str(e)[:200]}...\n\n"
-                    f"💡 Suggestion: {suggestion}\n\n"
-                    f"📋 Fallback: The app can still work with legacy YAMNet system."
+                messagebox.showinfo(
+                    "Modern System Test Successful",
+                    "✅ Modern CLAP + LLM system operational!\n\n"
+                    "🔬 Two-stage AI pipeline ready\n"
+                    "🚀 No legacy YAMNet dependencies\n"
+                    "💡 Creative contextual sound effects"
                 )
-            
-            app.log("="*50)
-            
+            else:
+                app.log("⚠️ System partially loaded")
+                messagebox.showwarning("Partial Load", "⚠️ System partially loaded - check logs")
+                
         except Exception as e:
-            error_msg = f"Error testing modern onomatopoeia system: {e}"
-            app.log(error_msg)
-            messagebox.showerror("Test Error", error_msg)
+            app.log(f"❌ Error: {e}")
+            messagebox.showerror("Test Failed", f"❌ {e}")
