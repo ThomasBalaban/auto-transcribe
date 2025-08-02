@@ -100,10 +100,10 @@ class VideoProcessor:
         
         try:
             # Import here to pass the AI sensitivity
-            from ai_onomatopoeia_detector import AIOnomatopoeiaDetector
+            from modern_onomatopoeia_detector import ModernOnomatopoeiaDetector as AIOnomatopoeiaDetector
             
             # Create AI detector with sensitivity
-            ai_detector = AIOnomatopoeiaDetector(ai_sensitivity=ai_sensitivity, log_func=log_func)
+            ai_detector = AIOnomatopoeiaDetector(sensitivity=ai_sensitivity, log_func=log_func)
             events = ai_detector.analyze_audio_file(track3_audio_path)
             
             if not events:
