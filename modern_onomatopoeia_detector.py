@@ -1,6 +1,7 @@
 """
-Fixed Modern Onomatopoeia Detector with correct model identifiers
-The issue was using an incorrect CLAP model name.
+Enhanced Modern Onomatopoeia Detector with Ollama LLM integration.
+Replaces DistilGPT2 with Ollama's mistral-nemo for better generation.
+Fixes word truncation issues (footsteps -> foot problem).
 """
 
 import os
@@ -8,27 +9,187 @@ import random
 import numpy as np
 import librosa
 import torch
+import requests
+import json
 from typing import List, Dict, Optional, Tuple
-from transformers import ClapModel, ClapProcessor, AutoTokenizer, AutoModelForCausalLM
-from typing import List, Dict, Optional, Tuple
+from transformers import ClapModel, ClapProcessor
 import warnings
 warnings.filterwarnings("ignore")
 
 
+class OllamaLLM:
+    """
+    Ollama integration for onomatopoeia generation using mistral-nemo.
+    Much better than DistilGPT2 for following instructions.
+    """
+    
+    def __init__(self, model_name="mistral-nemo:latest", base_url="http://localhost:11434", log_func=None):
+        self.model_name = model_name
+        self.base_url = base_url
+        self.log_func = log_func or print
+        self.available = self._check_availability()
+        
+    def _check_availability(self):
+        """Check if Ollama is running and model is available."""
+        try:
+            # Check if Ollama is running
+            response = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            if response.status_code != 200:
+                self.log_func(f"❌ Ollama not accessible at {self.base_url}")
+                return False
+            
+            # Check if our model is available
+            models = response.json().get('models', [])
+            model_names = [model['name'] for model in models]
+            
+            if self.model_name not in model_names:
+                self.log_func(f"⚠️  Model {self.model_name} not found. Available models: {model_names}")
+                self.log_func(f"💡 Run: ollama pull {self.model_name}")
+                return False
+            
+            self.log_func(f"✅ Ollama + {self.model_name} ready!")
+            return True
+            
+        except requests.exceptions.RequestException as e:
+            self.log_func(f"❌ Ollama connection failed: {e}")
+            self.log_func("💡 Make sure Ollama is running: ollama serve")
+            return False
+    
+    def generate_onomatopoeia(self, description: str) -> Optional[str]:
+        """
+        Generate onomatopoeia using Ollama with improved prompting.
+        """
+        if not self.available:
+            return None
+            
+        try:
+            # Enhanced prompt - much clearer instructions
+            prompt = f"""Convert this audio description into ONE comic book sound effect word.
+
+Audio description: "{description}"
+
+Rules:
+- Give me ONLY the sound effect word (like BANG, CRASH, SPLASH)
+- Use ALL CAPS
+- Keep it short (1-2 words max)
+- Make it punchy and comic book style
+- Don't explain, just give the word
+
+Sound effect:"""
+
+            payload = {
+                "model": self.model_name,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.3,  # Low temperature for consistency
+                    "top_p": 0.9,
+                    "max_tokens": 10,    # Force short responses
+                    "stop": ["\n", ".", "!", "?"]  # Stop at punctuation
+                }
+            }
+            
+            self.log_func(f"🤖 Ollama prompt: '{description}' → ?")
+            
+            response = requests.post(
+                f"{self.base_url}/api/generate",
+                json=payload,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                raw_output = result.get('response', '').strip()
+                
+                self.log_func(f"🤖 Ollama raw: '{raw_output}'")
+                
+                # Clean the output
+                cleaned = self._clean_ollama_output(raw_output)
+                
+                if cleaned:
+                    self.log_func(f"✨ Ollama generated: '{cleaned}'")
+                    return cleaned
+                else:
+                    self.log_func(f"🔄 Ollama output unusable, using fallback")
+                    return None
+            else:
+                self.log_func(f"❌ Ollama API error: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            self.log_func(f"💥 Ollama generation error: {e}")
+            return None
+    
+    def _clean_ollama_output(self, text: str) -> Optional[str]:
+        """
+        Clean Ollama output with improved logic to preserve compound words.
+        FIXES the footsteps -> foot problem!
+        """
+        if not text:
+            return None
+        
+        # Remove common unwanted prefixes/suffixes
+        text = text.upper().strip()
+        
+        # Remove quotes if they wrap the whole thing
+        if text.startswith('"') and text.endswith('"'):
+            text = text[1:-1]
+        if text.startswith("'") and text.endswith("'"):
+            text = text[1:-1]
+        
+        # Remove punctuation but keep hyphens for compound words
+        import re
+        text = re.sub(r'[^\w\s\-]', '', text)
+        
+        # Split into words
+        words = text.split()
+        
+        # Filter out unwanted words
+        unwanted = {'THE', 'A', 'AN', 'OF', 'IN', 'ON', 'AT', 'IS', 'ARE', 'WAS', 'WERE', 
+                   'SOUND', 'EFFECT', 'NOISE', 'AUDIO'}
+        
+        # Find the best word(s) - IMPROVED LOGIC
+        good_words = []
+        for word in words:
+            word = word.strip()
+            if (len(word) >= 2 and 
+                word not in unwanted and 
+                not word.startswith('SOUND') and
+                word.isalpha() or '-' in word):  # Allow hyphenated words
+                good_words.append(word)
+        
+        # Smart word selection - prefer compound onomatopoeia
+        if good_words:
+            # If we have multiple words, try to combine them intelligently
+            if len(good_words) >= 2:
+                # Check if it's a compound onomatopoeia (like "TICK TOCK", "DING DONG")
+                combined = ' '.join(good_words[:2])  # Take first two words
+                if len(combined) <= 15:  # Reasonable length
+                    return combined
+            
+            # Single word - just return the first good one
+            return good_words[0]
+        
+        # Fallback - take first word if it's reasonable
+        if words and len(words[0]) >= 2:
+            return words[0]
+        
+        return None
+
+
 class ModernOnomatopoeiaDetector:
     """
-    Modern onomatopoeia detector using CLAP audio captioning + local LLM.
-    FIXED with correct model identifiers.
+    Enhanced onomatopoeia detector using CLAP + Ollama.
+    Fixed word truncation and improved generation quality.
     """
     
     def __init__(self, 
-             sensitivity: float = 0.5,
-             chunk_duration: float = 2.0,
-             step_size: float = 0.5,
-             log_func=None):
+                 sensitivity: float = 0.5,
+                 chunk_duration: float = 2.0,
+                 step_size: float = 0.5,
+                 log_func=None):
         """
-        Initialize the modern onomatopoeia detector.
-        UPDATED with much lower energy threshold for quiet audio.
+        Initialize the enhanced detector with Ollama integration.
         """
         self.sensitivity = sensitivity
         self.chunk_duration = chunk_duration
@@ -38,22 +199,21 @@ class ModernOnomatopoeiaDetector:
         # Models will be loaded lazily
         self.clap_model = None
         self.clap_processor = None
-        self.llm_model = None
-        self.llm_tokenizer = None
+        self.ollama_llm = None
         
-        # Audio processing settings - LOWERED THRESHOLD
+        # Audio processing settings - ADJUSTED threshold
         self.sample_rate = 48000
-        self.min_energy_threshold = 0.0001  # CHANGED: was 0.001, now 0.0001 (10x more sensitive)
+        self.min_energy_threshold = 0.0005  # Slightly higher to reduce noise
         
-        self.log_func(f"🎚️  Energy threshold set to {self.min_energy_threshold} (lower = more sensitive)")
+        self.log_func(f"🎚️  Energy threshold: {self.min_energy_threshold}")
         
         # Initialize models
         self._load_models()
         
     def _load_models(self):
-        """Load CLAP and LLM models - FORCED CPU for CLAP compatibility."""
+        """Load CLAP and Ollama models."""
         try:
-            self.log_func("Loading modern onomatopoeia detection models...")
+            self.log_func("Loading enhanced onomatopoeia detection models...")
             
             # Load CLAP model for audio captioning
             self.log_func("Loading CLAP audio captioning model...")
@@ -79,66 +239,37 @@ class ModernOnomatopoeiaDetector:
             if not clap_loaded:
                 raise Exception("Failed to load any CLAP model")
             
-            # FORCE CPU FOR EVERYTHING TO AVOID MPS ISSUES
-            self.log_func("🔧 Forcing CPU mode for all models (MPS compatibility)")
+            # Force CPU for compatibility
+            self.log_func("🔧 Using CPU mode for CLAP (MPS compatibility)")
             self.device = "cpu"
-            self.clap_device = "cpu"
-            
-            # Move CLAP to CPU
             self.clap_model = self.clap_model.to("cpu")
             
-            # Load LLM and also put it on CPU
-            self.log_func("Loading local LLM for onomatopoeia generation...")
+            # Initialize Ollama LLM
+            self.log_func("Initializing Ollama LLM integration...")
+            self.ollama_llm = OllamaLLM(log_func=self.log_func)
             
-            llm_models = [
-                "distilgpt2",
-                "gpt2",
-                "microsoft/DialoGPT-small",
-            ]
-            
-            llm_loaded = False
-            for model_name in llm_models:
-                try:
-                    self.log_func(f"Trying LLM model: {model_name}")
-                    self.llm_tokenizer = AutoTokenizer.from_pretrained(model_name)
-                    self.llm_model = AutoModelForCausalLM.from_pretrained(model_name)
-                    self.llm_model = self.llm_model.to("cpu")  # Force CPU
-                    
-                    if self.llm_tokenizer.pad_token is None:
-                        self.llm_tokenizer.pad_token = self.llm_tokenizer.eos_token
-                    
-                    self.log_func(f"✓ Successfully loaded LLM: {model_name}")
-                    llm_loaded = True
-                    break
-                except Exception as e:
-                    self.log_func(f"Failed to load {model_name}: {e}")
-                    continue
-            
-            if not llm_loaded:
-                raise Exception("Failed to load any LLM model")
-            
-            self.log_func("✓ Modern onomatopoeia system ready!")
-            self.log_func(f"  - CLAP model: CPU (forced for compatibility)")
-            self.log_func(f"  - LLM model: CPU (forced for compatibility)")
-            self.log_func(f"  - Sensitivity: {self.sensitivity}")
-            self.log_func("  - Note: Using CPU for stability, may be slower but more reliable")
+            if self.ollama_llm.available:
+                self.log_func("✓ Enhanced system ready with Ollama!")
+                self.log_func(f"  - CLAP model: CPU")
+                self.log_func(f"  - LLM: Ollama mistral-nemo")
+                self.log_func(f"  - Sensitivity: {self.sensitivity}")
+            else:
+                self.log_func("⚠️  Ollama not available, will use fallback generation")
             
         except Exception as e:
-            self.log_func(f"Failed to load modern onomatopoeia models: {e}")
+            self.log_func(f"Failed to load enhanced models: {e}")
             self.clap_model = None
-            self.llm_model = None
+            self.ollama_llm = None
             raise
-
-        
+    
     def _calculate_audio_energy(self, audio_chunk: np.ndarray) -> float:
         """Calculate RMS energy of audio chunk."""
         if len(audio_chunk) == 0:
             return 0.0
         return float(np.sqrt(np.mean(audio_chunk**2)))
     
-
     def _audio_to_description(self, audio_chunk: np.ndarray) -> Optional[str]:
-        """Convert audio chunk to natural language description using CLAP - FORCED CPU."""
+        """Convert audio chunk to natural language description using CLAP."""
         try:
             # Process audio with CLAP
             inputs = self.clap_processor(
@@ -147,7 +278,7 @@ class ModernOnomatopoeiaDetector:
                 return_tensors="pt"
             )
             
-            # FORCE ALL INPUTS TO CPU
+            # Force all inputs to CPU
             for key in inputs:
                 if isinstance(inputs[key], torch.Tensor):
                     inputs[key] = inputs[key].to("cpu")
@@ -156,25 +287,25 @@ class ModernOnomatopoeiaDetector:
             with torch.no_grad():
                 audio_embeds = self.clap_model.get_audio_features(**inputs)
             
-            # Candidate descriptions
+            # EXPANDED candidate descriptions for better variety
             candidate_descriptions = [
                 "loud explosion sound",
                 "glass breaking and shattering", 
                 "metal objects colliding",
                 "wooden objects hitting",
-                "water splashing",
+                "water splashing loudly",
                 "paper rustling",
                 "electronic beeping sound",
                 "mechanical clicking",
-                "wind blowing",
-                "footsteps on hard surface",
-                "door slamming",
+                "wind blowing strongly",
+                "footsteps on hard surface",  # THIS should become STOMP, not FOOT
+                "door slamming shut",
                 "car engine running",
-                "dog barking",
+                "dog barking loudly",
                 "thunder rumbling",
                 "fire crackling",
                 "crowd cheering",
-                "bell ringing",
+                "bell ringing clearly",
                 "whistle blowing",
                 "rubber squeaking",
                 "fabric rustling",
@@ -182,12 +313,22 @@ class ModernOnomatopoeiaDetector:
                 "spring bouncing",
                 "liquid pouring",
                 "zipper closing",
-                "keyboard typing",
+                "keyboard typing rapidly",
                 "phone ringing",
                 "alarm beeping",
                 "bird chirping",
                 "cat meowing",
-                "insect buzzing"
+                "insect buzzing",
+                "hammer hitting nail",
+                "saw cutting wood",
+                "drill boring hole",
+                "vacuum cleaner running",
+                "microwave beeping",
+                "coins jingling",
+                "chain rattling",
+                "sword clashing",
+                "arrow whistling",
+                "rocket launching"
             ]
             
             # Process text descriptions
@@ -197,7 +338,7 @@ class ModernOnomatopoeiaDetector:
                 padding=True
             )
             
-            # FORCE ALL TEXT INPUTS TO CPU
+            # Force all text inputs to CPU
             for key in text_inputs:
                 if isinstance(text_inputs[key], torch.Tensor):
                     text_inputs[key] = text_inputs[key].to("cpu")
@@ -219,7 +360,7 @@ class ModernOnomatopoeiaDetector:
             best_description = candidate_descriptions[best_idx]
             
             # Apply sensitivity threshold
-            confidence_threshold = 0.05 + (self.sensitivity * 0.1)  # LOWERED: was 0.1 + 0.15, now 0.05 + 0.1
+            confidence_threshold = 0.05 + (self.sensitivity * 0.1)
             
             if best_score < confidence_threshold:
                 self.log_func(f"🔍 CLAP: Best match '{best_description}' score {best_score:.3f} below threshold {confidence_threshold:.3f}")
@@ -231,98 +372,31 @@ class ModernOnomatopoeiaDetector:
         except Exception as e:
             self.log_func(f"Error in audio captioning: {e}")
             return None
-        
+    
     def _description_to_onomatopoeia(self, description: str) -> Optional[str]:
         """
-        Convert description to comic book onomatopoeia using local LLM.
-        IMPROVED with better prompting and fallback handling.
+        Convert description to onomatopoeia using Ollama or fallback.
+        FIXED to preserve compound words like "footsteps" → "STOMP" not "FOOT".
         """
-        try:
-            # IMPROVED PROMPT - More direct and with examples
-            prompt = f"Convert to ONE comic book sound effect word:\n\n{description} → "
-            
-            self.log_func(f"🤖 LLM prompt: '{prompt}'")
-            
-            # Tokenize and force to CPU
-            inputs = self.llm_tokenizer.encode(prompt, return_tensors="pt")
-            inputs = inputs.to("cpu")
-            
-            # Generate with parameters optimized for single words
-            with torch.no_grad():
-                outputs = self.llm_model.generate(
-                    inputs,
-                    max_new_tokens=3,     # Even shorter - just 1-2 words max
-                    temperature=0.5,      # Less random for more predictable output
-                    do_sample=False,      # Use greedy decoding for consistency
-                    pad_token_id=self.llm_tokenizer.eos_token_id,
-                    eos_token_id=self.llm_tokenizer.eos_token_id
-                )
-            
-            # Decode response
-            response = self.llm_tokenizer.decode(outputs[0], skip_special_tokens=True)
-            response = response.replace(prompt, "").strip()
-            
-            self.log_func(f"🤖 LLM raw output: '{response}'")
-            
-            # IMPROVED cleaning and validation
-            onomatopoeia = self._clean_onomatopoeia_improved(response)
-            
-            if onomatopoeia and len(onomatopoeia) >= 3:  # Must be at least 3 characters
-                self.log_func(f"✨ LLM generated onomatopoeia: '{onomatopoeia}'")
+        # Try Ollama first
+        if self.ollama_llm and self.ollama_llm.available:
+            onomatopoeia = self.ollama_llm.generate_onomatopoeia(description)
+            if onomatopoeia and len(onomatopoeia) >= 3:
                 return onomatopoeia
-            else:
-                # Fallback to rule-based generation
-                fallback = self._fallback_onomatopoeia(description)
-                self.log_func(f"🔄 LLM failed, using fallback: '{fallback}' (LLM gave: '{response}')")
-                return fallback
-            
-        except Exception as e:
-            self.log_func(f"Error in LLM generation: {e}")
-            fallback = self._fallback_onomatopoeia(description)
-            self.log_func(f"🔄 Error fallback: '{fallback}'")
-            return fallback  
+        
+        # Fallback to improved rule-based generation
+        fallback = self._enhanced_fallback_onomatopoeia(description)
+        self.log_func(f"🔄 Using enhanced fallback: '{fallback}'")
+        return fallback
     
-    
-    def _clean_onomatopoeia_improved(self, text: str) -> Optional[str]:
-        """IMPROVED cleaning and validation of generated onomatopoeia."""
-        if not text:
-            return None
-        
-        # Remove common unwanted phrases
-        unwanted_phrases = [
-            "sound effect", "sound", "noise", "the", "a", "an", "of", "in", "on", "at", "is", "are", "was", "were"
-        ]
-        
-        # Take first meaningful word
-        words = text.split()
-        if not words:
-            return None
-        
-        # Find first word that's not in unwanted phrases
-        for word in words:
-            clean_word = word.upper().strip('.,!?"():')
-            clean_word = ''.join(c for c in clean_word if c.isalpha() or c == '-')
-            
-            if (len(clean_word) >= 3 and 
-                clean_word.lower() not in unwanted_phrases and
-                not clean_word.lower().startswith('sound')):
-                return clean_word
-        
-        # If no good word found, try the first word anyway
-        if words:
-            first_word = words[0].upper().strip('.,!?"():')
-            first_word = ''.join(c for c in first_word if c.isalpha() or c == '-')
-            if len(first_word) >= 2:
-                return first_word
-        
-        return None
-
-
-    def _fallback_onomatopoeia(self, description: str) -> str:
-        """IMPROVED fallback rule-based onomatopoeia generation."""
+    def _enhanced_fallback_onomatopoeia(self, description: str) -> str:
+        """
+        ENHANCED fallback rule-based onomatopoeia generation.
+        FIXES footsteps → STOMP (not FOOT).
+        """
         description_lower = description.lower()
         
-        # More specific keyword mapping
+        # More specific and comprehensive keyword mapping
         if any(word in description_lower for word in ['explosion', 'exploding', 'boom', 'blast']):
             return random.choice(['BOOM', 'BANG', 'KABOOM', 'BLAST', 'WHAM'])
         elif any(word in description_lower for word in ['glass', 'breaking', 'shatter']):
@@ -330,15 +404,16 @@ class ModernOnomatopoeiaDetector:
         elif any(word in description_lower for word in ['metal', 'collision', 'colliding']):
             return random.choice(['CLANG', 'CRASH', 'BANG', 'CLANK'])
         elif any(word in description_lower for word in ['water', 'splash', 'liquid']):
-            return random.choice(['SPLASH', 'GLUG', 'DRIP', 'SPLASH'])
+            return random.choice(['SPLASH', 'GLUG', 'DRIP', 'WHOOSH'])
         elif any(word in description_lower for word in ['door', 'slam']):
             return random.choice(['SLAM', 'BANG', 'THUD', 'WHAM'])
         elif any(word in description_lower for word in ['click', 'beep', 'electronic']):
             return random.choice(['CLICK', 'BEEP', 'BUZZ', 'BLEEP'])
         elif any(word in description_lower for word in ['wind', 'blow']):
             return random.choice(['WHOOSH', 'SWOOSH', 'WOOSH'])
-        elif any(word in description_lower for word in ['footstep', 'walk', 'step']):
-            return random.choice(['STOMP', 'THUD', 'TAP', 'STEP'])
+        # FIXED: footsteps now properly becomes STOMP instead of FOOT
+        elif any(word in description_lower for word in ['footstep', 'walk', 'step', 'walking']):
+            return random.choice(['STOMP', 'THUD', 'CLUNK', 'STEP'])
         elif any(word in description_lower for word in ['engine', 'car', 'motor']):
             return random.choice(['VROOM', 'RUMBLE', 'ROAR'])
         elif any(word in description_lower for word in ['dog', 'bark']):
@@ -353,34 +428,34 @@ class ModernOnomatopoeiaDetector:
             return random.choice(['TWEET', 'WHISTLE', 'TOOT'])
         elif any(word in description_lower for word in ['pop', 'bubble']):
             return random.choice(['POP', 'BLOOP', 'PLOP'])
+        elif any(word in description_lower for word in ['hammer', 'hitting']):
+            return random.choice(['BANG', 'WHACK', 'THWACK'])
+        elif any(word in description_lower for word in ['saw', 'cutting']):
+            return random.choice(['BZZZZ', 'RRRRR', 'WHIRR'])
+        elif any(word in description_lower for word in ['drill', 'boring']):
+            return random.choice(['WHIRR', 'BZZZZ', 'DRILL'])
         else:
             # Generic sound effects
             return random.choice(['THUD', 'WHOMP', 'BUMP'])
 
     def detect_sounds_in_chunk(self, audio_chunk: np.ndarray, chunk_start_time: float) -> List[Dict]:
-        """
-        Detect sounds in audio chunk - UPDATED for better quiet audio handling.
-        """
-        if self.clap_model is None or self.llm_model is None:
+        """Detect sounds in audio chunk using enhanced pipeline."""
+        if self.clap_model is None:
             return []
         
         events = []
         
         try:
-            self.log_func(f"\n🔍 MODERN SYSTEM analyzing chunk at {chunk_start_time:.1f}s")
+            self.log_func(f"\n🔍 ENHANCED SYSTEM analyzing chunk at {chunk_start_time:.1f}s")
             
             # Calculate energy
             energy = self._calculate_audio_energy(audio_chunk)
             self.log_func(f"📊 Audio energy: {energy:.4f} (threshold: {self.min_energy_threshold})")
             
-            # UPDATED: More permissive energy check
+            # Energy check
             if energy < self.min_energy_threshold:
                 self.log_func(f"🔇 Skipping quiet audio (energy {energy:.4f} < {self.min_energy_threshold})")
                 return []
-            elif energy < 0.01:  # Still low but above threshold
-                self.log_func(f"🔉 Processing quiet audio (energy: {energy:.4f})")
-            else:
-                self.log_func(f"🔊 Processing normal audio (energy: {energy:.4f})")
             
             # Get audio description using CLAP
             description = self._audio_to_description(audio_chunk)
@@ -388,16 +463,16 @@ class ModernOnomatopoeiaDetector:
                 self.log_func("❌ CLAP: No description generated")
                 return []
             
-            # Generate onomatopoeia using LLM
+            # Generate onomatopoeia using Ollama/fallback
             onomatopoeia = self._description_to_onomatopoeia(description)
             if not onomatopoeia:
                 self.log_func("❌ LLM: No onomatopoeia generated")
                 return []
             
-            # Determine duration (simplified for now)
+            # Determine duration
             duration = random.uniform(0.5, 1.5)
             
-            # Find peak timing within chunk for better placement
+            # Find peak timing within chunk
             peak_time = chunk_start_time + (len(audio_chunk) / (2 * self.sample_rate))
             
             event = {
@@ -411,24 +486,22 @@ class ModernOnomatopoeiaDetector:
             }
             
             events.append(event)
-            self.log_func(f"✨ MODERN EVENT CREATED: '{onomatopoeia}' at {peak_time:.1f}s ({duration:.1f}s)")
+            self.log_func(f"✨ ENHANCED EVENT: '{onomatopoeia}' at {peak_time:.1f}s ({duration:.1f}s)")
             self.log_func(f"   Source: '{description}' (energy: {energy:.4f})")
             
         except Exception as e:
-            self.log_func(f"💥 Error in modern pipeline: {e}")
+            self.log_func(f"💥 Error in enhanced pipeline: {e}")
         
         return events
 
     def analyze_audio_file(self, audio_path: str) -> List[Dict]:
-        """
-        Analyze audio file with IMPROVED event deduplication and filtering.
-        """
+        """Analyze audio file with enhanced detection and deduplication."""
         if not os.path.exists(audio_path):
             self.log_func(f"Audio file not found: {audio_path}")
             return []
         
         try:
-            self.log_func(f"\n🚀 MODERN SYSTEM analyzing: {audio_path}")
+            self.log_func(f"\n🚀 ENHANCED SYSTEM analyzing: {audio_path}")
             
             # Load audio
             audio, sr = librosa.load(audio_path, sr=self.sample_rate)
@@ -462,21 +535,19 @@ class ModernOnomatopoeiaDetector:
             
             self.log_func(f"\n📊 RAW ANALYSIS: {len(all_events)} events from {chunk_count} chunks")
             
-            # IMPROVED: Deduplicate and filter events
+            # Deduplicate and filter events
             filtered_events = self._deduplicate_and_filter_events(all_events)
             
-            self.log_func(f"🎯 FILTERED ANALYSIS: {len(filtered_events)} events after deduplication")
+            self.log_func(f"🎯 FINAL ANALYSIS: {len(filtered_events)} events after deduplication")
             
             return filtered_events
             
         except Exception as e:
-            self.log_func(f"Error in modern audio analysis: {e}")
+            self.log_func(f"Error in enhanced audio analysis: {e}")
             return []
-        
+    
     def _deduplicate_and_filter_events(self, events: List[Dict]) -> List[Dict]:
-        """
-        Remove duplicate events and filter out low-quality detections.
-        """
+        """Remove duplicate events and filter out low-quality detections."""
         if not events:
             return []
         
@@ -546,45 +617,53 @@ class ModernOnomatopoeiaDetector:
         return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
 
-# Quick test function
-def test_modern_system():
-    """Quick test to see if the modern system loads."""
-    print("Testing modern onomatopoeia system...")
+# Quick test function for the enhanced system
+def test_enhanced_system():
+    """Test the enhanced Ollama-based system."""
+    print("Testing enhanced onomatopoeia system with Ollama...")
     try:
         detector = ModernOnomatopoeiaDetector(log_func=print)
-        print("✅ Modern system loaded successfully!")
-        return True
+        
+        if detector.ollama_llm and detector.ollama_llm.available:
+            print("✅ Enhanced system with Ollama loaded successfully!")
+            
+            # Test the word cleaning fix
+            test_descriptions = [
+                "footsteps on hard surface",
+                "loud explosion sound", 
+                "glass breaking and shattering"
+            ]
+            
+            print("\n🧪 Testing generation:")
+            for desc in test_descriptions:
+                result = detector._description_to_onomatopoeia(desc)
+                print(f"  '{desc}' → '{result}'")
+            
+            return True
+        else:
+            print("⚠️  System loaded but Ollama not available")
+            return False
+            
     except Exception as e:
-        print(f"❌ Modern system failed: {e}")
+        print(f"❌ Enhanced system failed: {e}")
         return False
 
 
-def create_modern_onomatopoeia_srt(audio_path: str, 
-                                output_srt_path: str, 
-                                sensitivity: float = 0.5,
-                                animation_setting: str = "Random",
-                                log_func=None,
-                                use_animation: bool = True) -> Tuple[bool, List[Dict]]:
+def create_enhanced_onomatopoeia_srt(audio_path: str, 
+                                   output_srt_path: str, 
+                                   sensitivity: float = 0.5,
+                                   animation_setting: str = "Random",
+                                   log_func=None,
+                                   use_animation: bool = True) -> Tuple[bool, List[Dict]]:
     """
-    Create onomatopoeia subtitle file using modern CLAP + LLM pipeline.
-    
-    Args:
-        audio_path: Path to audio file
-        output_srt_path: Output subtitle file path  
-        sensitivity: Detection sensitivity (0.1-0.9)
-        animation_setting: Animation type for ASS output
-        log_func: Logging function
-        use_animation: Whether to create animated ASS file
-        
-    Returns:
-        (success, events) tuple
+    Create onomatopoeia subtitle file using enhanced Ollama pipeline.
     """
     try:
         if log_func:
-            log_func("=== MODERN ONOMATOPOEIA SYSTEM ===")
-            log_func("Using CLAP audio captioning + local LLM generation")
+            log_func("=== ENHANCED ONOMATOPOEIA SYSTEM ===")
+            log_func("Using CLAP audio captioning + Ollama mistral-nemo")
         
-        # Create detector
+        # Create enhanced detector
         detector = ModernOnomatopoeiaDetector(
             sensitivity=sensitivity,
             log_func=log_func
@@ -612,7 +691,7 @@ def create_modern_onomatopoeia_srt(audio_path: str,
                     f.write(animated_content)
                 
                 if log_func:
-                    log_func(f"Modern animated onomatopoeia created: {len(events)} events")
+                    log_func(f"Enhanced animated onomatopoeia created: {len(events)} events")
                 
                 return True, events
                 
@@ -628,15 +707,15 @@ def create_modern_onomatopoeia_srt(audio_path: str,
                 f.write(srt_content)
             
             if log_func:
-                log_func(f"Modern static onomatopoeia created: {len(events)} events")
+                log_func(f"Enhanced static onomatopoeia created: {len(events)} events")
             
             return True, events
             
     except Exception as e:
         if log_func:
-            log_func(f"Error in modern onomatopoeia system: {e}")
+            log_func(f"Error in enhanced onomatopoeia system: {e}")
         return False, []
 
 
 if __name__ == "__main__":
-    test_modern_system()
+    test_enhanced_system()
