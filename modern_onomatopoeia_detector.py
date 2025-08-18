@@ -7,12 +7,12 @@ Fixes word truncation issues (footsteps -> foot problem).
 import os
 import random
 import numpy as np
-import librosa
-import torch
+import librosa # type: ignore
+import torch # type: ignore
 import requests
 import json
 from typing import List, Dict, Optional, Tuple
-from transformers import ClapModel, ClapProcessor
+from transformers import ClapModel, ClapProcessor # type: ignore
 import warnings
 warnings.filterwarnings("ignore")
 
