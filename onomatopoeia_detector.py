@@ -5,9 +5,9 @@ FIXED: Updated imports to match the new enhanced function names.
 """
 
 # Import the enhanced system with correct function names
-from modern_onomatopoeia_detector import (
-    ModernOnomatopoeiaDetector as OnomatopoeiaDetector,
-    create_enhanced_onomatopoeia_srt  # FIXED: Was create_modern_onomatopoeia_srt
+from integration_update import (
+    AdaptiveOnomatopoeiaDetector as OnomatopoeiaDetector,
+    create_onomatopoeia_srt as create_enhanced_onomatopoeia_srt
 )
 
 # Backward compatibility functions with updated calls

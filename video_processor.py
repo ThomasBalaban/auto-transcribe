@@ -7,7 +7,7 @@ import os
 import tempfile
 from transcriber import transcribe_audio, convert_to_audio
 from embedder import convert_to_srt
-from onomatopoeia_detector import create_onomatopoeia_srt
+from integration_update import create_onomatopoeia_srt
 from subtitle_embedder import embed_subtitles
 
 
@@ -98,7 +98,7 @@ class VideoProcessor:
         log_func(f"Detection sensitivity: {ai_sensitivity}")
         
         try:
-            from modern_onomatopoeia_detector import ModernOnomatopoeiaDetector
+            from modern_onomatopoeia_detector import EnhancedOnomatopoeiaDetector as ModernOnomatopoeiaDetector
             
             detector = ModernOnomatopoeiaDetector(sensitivity=ai_sensitivity, log_func=log_func)
             events = detector.analyze_audio_file(track3_audio_path)
