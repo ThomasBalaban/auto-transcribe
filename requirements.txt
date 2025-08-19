@@ -1,14 +1,24 @@
+# Core UI and Processing
 customtkinter
-faster-whisper
 ffmpeg-python
-tensorflow
-tensorflow-hub
-librosa
+numpy
+
+# Speech Recognition
+faster-whisper
 whisper
 whisperx
+
+# Multimodal AI Models
 torch
 torchaudio
-numpy
 transformers
 accelerate
+
+# Video/Audio Processing
+librosa
+opencv-python
+pillow
+
+# Additional AI Dependencies
 datasets
+requests

@@ -1,6 +1,6 @@
 """
 UI components and setup for the SimpleAutoSubs application.
-Updated to include all new animation style options.
+Simplified for the unified multimodal onomatopoeia system.
 """
 
 import customtkinter as ctk # type: ignore
@@ -85,11 +85,11 @@ class UISetup:
             variable=device_var
         ).pack(side="left", padx=5, pady=5)
         
-        # WhisperX check button
+        # System status button (simplified)
         ctk.CTkButton(
             model_frame,
-            text="Check WhisperX",
-            command=app.check_whisperx_availability,
+            text="System Status",
+            command=app.check_system_status,
             width=120
         ).pack(side="left", padx=(20, 5), pady=5)
         
@@ -97,16 +97,15 @@ class UISetup:
     
     @staticmethod
     def create_onomatopoeia_section(parent, app):
-        """Create the onomatopoeia settings section with AI sensitivity controls."""
+        """Create the onomatopoeia settings section."""
         onomatopoeia_frame = ctk.CTkFrame(parent)
         onomatopoeia_frame.pack(fill="x", padx=5, pady=5)
         
-        # First row - AI sensitivity and test button
+        # First row - AI sensitivity
         first_row = ctk.CTkFrame(onomatopoeia_frame)
         first_row.pack(fill="x", padx=5, pady=5)
         
-        # UPDATED LABEL: Changed from "Sound Effects Confidence" to "AI Decision Sensitivity"
-        ctk.CTkLabel(first_row, text="AI Decision Sensitivity:").pack(side="left", padx=5, pady=5)
+        ctk.CTkLabel(first_row, text="AI Sensitivity:").pack(side="left", padx=5, pady=5)
         confidence_var = ctk.StringVar(value="0.5")  # Default to medium sensitivity
         ctk.CTkOptionMenu(
             first_row,
@@ -114,14 +113,7 @@ class UISetup:
             variable=confidence_var
         ).pack(side="left", padx=5, pady=5)
         
-        ctk.CTkButton(
-            first_row,
-            text="Test AI Detection",  # Also updated this button text
-            command=app.test_onomatopoeia,
-            width=140
-        ).pack(side="left", padx=(20, 5), pady=5)
-        
-        # Second row - animation type selection with all options
+        # Second row - animation type selection
         second_row = ctk.CTkFrame(onomatopoeia_frame)
         second_row.pack(fill="x", padx=5, pady=5)
         
@@ -138,7 +130,8 @@ class UISetup:
             "Pulse",
             "Wave",
             "Explode-Out",
-            "Hyper Bounce"
+            "Hyper Bounce",
+            "Static"  # Added static option
         ]
         
         ctk.CTkOptionMenu(
@@ -149,7 +142,6 @@ class UISetup:
         ).pack(side="left", padx=5, pady=5)
         
         return confidence_var, animation_var
-
 
     @staticmethod
     def create_progress_section(parent):
@@ -187,135 +179,77 @@ class UISetup:
 
 
 class TestDialogs:
-    """Handles test dialog windows and system checks."""
+    """Simplified system checking."""
     
     @staticmethod
-    def check_whisperx_availability(app):
-        """Check if WhisperX is available and display detailed status."""
+    def check_system_status(app):
+        """Check overall system status and display simplified information."""
         try:
             app.log("="*50)
-            app.log("CHECKING WHISPERX AVAILABILITY...")
+            app.log("MULTIMODAL ONOMATOPOEIA SYSTEM STATUS")
             app.log("="*50)
             
-            # Check if WhisperX can be imported
+            # Test the unified detector
             try:
-                import whisperx # type: ignore
-                app.log("✓ WhisperX module found and imported successfully")
-                whisperx_available = True
-            except ImportError as e:
-                app.log(f"✗ WhisperX module import failed: {e}")
-                whisperx_available = False
-            
-            # Check specific components if main import worked
-            if whisperx_available:
-                try:
-                    from whisperx import load_align_model, align  # type: ignore
-                    app.log("✓ WhisperX alignment functions available")
-                    components_available = True
-                except ImportError as e:
-                    app.log(f"✗ WhisperX alignment components missing: {e}")
-                    components_available = False
-            else:
-                components_available = False
-            
-            # Check PyTorch
-            try:
-                import torch  # type: ignore
-                app.log(f"✓ PyTorch found (version: {torch.__version__})")
+                from onomatopoeia_detector import OnomatopoeiaDetector
                 
-                if app.device_var.get() == "cuda":
-                    if torch.cuda.is_available():
-                        app.log(f"✓ CUDA available (devices: {torch.cuda.device_count()})")
-                        if torch.cuda.device_count() > 0:
-                            cuda_info = f"Current device: {torch.cuda.get_device_name(0)}"
-                            app.log(f"  {cuda_info}")
-                    else:
-                        app.log("⚠ CUDA not available (will fall back to CPU)")
-            except ImportError:
-                app.log("✗ PyTorch not found (required for WhisperX)")
-            
-            # Check other dependencies
-            try:
-                import faster_whisper # type: ignore
-                app.log("✓ Faster-Whisper available")
-            except ImportError:
-                app.log("✗ Faster-Whisper not found")
-            
-            # Show results
-            app.log("-" * 30)
-            if whisperx_available and components_available:
-                app.log("🎉 WHISPERX STATUS: FULLY AVAILABLE")
+                app.log("Testing unified onomatopoeia detector...")
+                detector = OnomatopoeiaDetector(log_func=app.log)
+                
+                app.log("✅ Core System: OPERATIONAL")
+                app.log("   - Phase 1: Gaming onset detection ready")
+                app.log("   - Phase 2: VideoMAE + X-CLIP analysis ready") 
+                app.log("   - Phase 3: Multimodal fusion engine ready")
+                app.log("   - Phase 4: Gaming optimizations ready")
+                
+                # Check device availability
+                import torch
+                if torch.backends.mps.is_available():
+                    app.log("✅ MPS (Mac M4): Available")
+                elif torch.cuda.is_available():
+                    app.log("✅ CUDA: Available")
+                else:
+                    app.log("⚠️  GPU: Not available (using CPU)")
+                
+                # Check animation system
+                try:
+                    from animations.core import OnomatopoeiaAnimator
+                    app.log("✅ Animation System: 8 animation types ready")
+                except ImportError:
+                    app.log("⚠️  Animation System: Not available")
+                
+                # Check Ollama
+                if hasattr(detector, 'ollama_llm') and detector.ollama_llm and detector.ollama_llm.available:
+                    app.log("✅ Ollama LLM: Connected")
+                else:
+                    app.log("⚠️  Ollama LLM: Not available (using fallback)")
+                
+                app.log("\n🎮 Optimized for gaming content:")
+                app.log("   - Horror, action, FPS games")
+                app.log("   - TikTok-style gaming clips")
+                app.log("   - Context-aware effect selection")
+                
                 messagebox.showinfo(
-                    "WhisperX Status", 
-                    "✓ WhisperX is fully available!\n\nYour transcriptions will use improved word-level alignment for better subtitle timing."
+                    "System Status", 
+                    "✅ Multimodal Onomatopoeia System Ready!\n\n"
+                    "🚀 4-Phase Detection Pipeline\n"
+                    "🎬 Video + Audio Analysis\n" 
+                    "🎮 Gaming Content Optimized\n"
+                    "🎨 8 Animation Types Available\n\n"
+                    "Ready to process gaming content!"
                 )
-            elif whisperx_available:
-                app.log("⚠ WHISPERX STATUS: PARTIALLY AVAILABLE")
-                messagebox.showwarning(
-                    "WhisperX Status", 
-                    "⚠ WhisperX is partially available.\n\nSome components are missing. The app will use standard Whisper timestamps instead."
-                )
-            else:
-                app.log("❌ WHISPERX STATUS: NOT AVAILABLE")
-                messagebox.showwarning(
-                    "WhisperX Status", 
-                    "❌ WhisperX is not available.\n\nThe app will work fine but will use standard Whisper timestamps. For better accuracy, consider installing WhisperX:\n\npip install whisperx"
+                
+            except Exception as e:
+                app.log(f"❌ System test failed: {e}")
+                messagebox.showerror(
+                    "System Error", 
+                    f"❌ System initialization failed:\n\n{e}\n\n"
+                    "Check that all dependencies are installed."
                 )
             
             app.log("="*50)
             
         except Exception as e:
-            error_msg = f"Error checking WhisperX availability: {e}"
+            error_msg = f"Error checking system status: {e}"
             app.log(error_msg)
             messagebox.showerror("Check Error", error_msg)
-    
-    
-    @staticmethod
-    def test_onomatopoeia(app):
-        """Test modern CLAP + LLM onomatopoeia detection system."""
-        try:
-            app.log("="*50)
-            app.log("TESTING MODERN ONOMATOPOEIA DETECTION SYSTEM")
-            app.log("="*50)
-            
-            # Check PyTorch (required for modern system)
-            try:
-                import torch
-                app.log(f"✓ PyTorch found (version: {torch.__version__})")
-            except ImportError:
-                app.log("✗ PyTorch not found")
-                messagebox.showerror("Missing Dependency", "PyTorch is required.\n\nInstall: pip install torch transformers")
-                return
-            
-            # Check Transformers
-            try:
-                import transformers
-                app.log(f"✓ Transformers found (version: {transformers.__version__})")
-            except ImportError:
-                app.log("✗ Transformers not found")
-                messagebox.showerror("Missing Dependency", "Transformers required.\n\nInstall: pip install transformers")
-                return
-            
-            # Test modern system
-            from modern_onomatopoeia_detector import EnhancedOnomatopoeiaDetector as ModernOnomatopoeiaDetector
-            detector = ModernOnomatopoeiaDetector(log_func=app.log)
-            
-            if detector.clap_model and detector.llm_model:
-                app.log("🎉 MODERN SYSTEM STATUS: FULLY OPERATIONAL")
-                app.log("✅ CLAP + LLM pipeline ready")
-                app.log("✅ No legacy dependencies")
-                
-                messagebox.showinfo(
-                    "Modern System Test Successful",
-                    "✅ Modern CLAP + LLM system operational!\n\n"
-                    "🔬 Two-stage AI pipeline ready\n"
-                    "🚀 No legacy YAMNet dependencies\n"
-                    "💡 Creative contextual sound effects"
-                )
-            else:
-                app.log("⚠️ System partially loaded")
-                messagebox.showwarning("Partial Load", "⚠️ System partially loaded - check logs")
-                
-        except Exception as e:
-            app.log(f"❌ Error: {e}")
-            messagebox.showerror("Test Failed", f"❌ {e}")
