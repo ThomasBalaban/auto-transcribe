@@ -83,29 +83,54 @@ class VideoProcessor:
             log_func(f"{track_name} has no meaningful speech - skipping subtitle creation")
             return None
     
+   
     @staticmethod
-    def process_onomatopoeia(track3_audio_path, temp_dir, animation_setting, ai_sensitivity, log_func):
-        """Process onomatopoeia detection with modern CLAP + LLM system."""
+    def process_onomatopoeia(track3_audio_path, temp_dir, animation_setting, ai_sensitivity, log_func, input_video_file):
+        """Process onomatopoeia detection with complete multimodal system."""
         onomatopoeia_srt_path = os.path.join(temp_dir, "onomatopoeia_subtitles.srt")
         
         if not track3_audio_path or not os.path.exists(track3_audio_path):
             log_func("Onomatopoeia detection: No desktop audio available")
             return None, []
         
-        log_func("\n=== MODERN ONOMATOPOEIA PROCESSING ===")
-        log_func("Using CLAP audio captioning + local LLM generation")
+        log_func("\n=== COMPLETE MULTIMODAL ONOMATOPOEIA SYSTEM ===")
+        log_func("Phase 1-4: Onset + Video + Fusion + Gaming Optimization")
         log_func(f"Animation type: {animation_setting}")
-        log_func(f"Detection sensitivity: {ai_sensitivity}")
+        log_func(f"AI sensitivity: {ai_sensitivity}")
         
         try:
-            from modern_onomatopoeia_detector import EnhancedOnomatopoeiaDetector as ModernOnomatopoeiaDetector
-            
-            detector = ModernOnomatopoeiaDetector(sensitivity=ai_sensitivity, log_func=log_func)
-            events = detector.analyze_audio_file(track3_audio_path)
-            
-            if not events:
-                log_func("Modern system found no onomatopoeia events")
-                return None, []
+            # Try the complete multimodal system first
+            try:
+                from complete_multimodal_detector import CompleteMultimodalDetector
+                
+                log_func("🚀 Using Complete Multimodal System")
+                detector = CompleteMultimodalDetector(
+                    sensitivity=ai_sensitivity,
+                    device="mps",  # Mac M4 optimization
+                    log_func=log_func
+                )
+                
+                events = detector.analyze_gaming_content(input_video_file, audio_path=track3_audio_path)
+                
+                if not events:
+                    log_func("Complete multimodal system found no onomatopoeia events")
+                    return None, []
+                
+                log_func(f"✅ Complete multimodal analysis: {len(events)} events")
+                
+            except ImportError as e:
+                log_func(f"Complete multimodal system not available: {e}")
+                log_func("Falling back to modern onset detection...")
+                
+                # Fallback to modern system
+                from modern_onomatopoeia_detector import ModernOnomatopoeiaDetector
+                
+                detector = ModernOnomatopoeiaDetector(sensitivity=ai_sensitivity, log_func=log_func)
+                events = detector.analyze_audio_file(track3_audio_path)
+                
+                if not events:
+                    log_func("Modern system found no onomatopoeia events")
+                    return None, []
             
             # Create animated or static version
             try:
@@ -117,21 +142,54 @@ class VideoProcessor:
                 with open(ass_path, 'w', encoding='utf-8') as f:
                     f.write(animated_content)
                 
-                log_func(f"✓ Modern Animated Effects: {len(events)} events")
+                log_func(f"✓ Multimodal Animated Effects: {len(events)} events")
+                log_func(f"🎮 Gaming-optimized with context awareness")
                 return ass_path, events
                 
             except ImportError:
-                srt_content = detector.generate_srt_content(events)
+                # Fallback to static SRT
+                if hasattr(detector, 'generate_srt_content'):
+                    srt_content = detector.generate_srt_content(events)
+                else:
+                    # Manual SRT generation for compatibility
+                    srt_lines = []
+                    for i, event in enumerate(events, 1):
+                        start_time = event['start_time']
+                        end_time = event['end_time'] 
+                        word = event['word']
+                        
+                        start_formatted = VideoProcessor._format_srt_time(start_time)
+                        end_formatted = VideoProcessor._format_srt_time(end_time)
+                        
+                        srt_lines.extend([
+                            str(i),
+                            f"{start_formatted} --> {end_formatted}",
+                            word,
+                            ""
+                        ])
+                    srt_content = "\n".join(srt_lines)
+                
                 with open(onomatopoeia_srt_path, 'w', encoding='utf-8') as f:
                     f.write(srt_content)
                 
-                log_func(f"✓ Modern Static Effects: {len(events)} events")
+                log_func(f"✓ Multimodal Static Effects: {len(events)} events")
                 return onomatopoeia_srt_path, events
                     
         except Exception as e:
-            log_func(f"Modern onomatopoeia processing failed: {e}")
+            log_func(f"Multimodal onomatopoeia processing failed: {e}")
             return None, []
+   
+    @staticmethod
+    def _format_srt_time(seconds):
+        """Format time for SRT: HH:MM:SS,mmm"""
+        millis = int((seconds - int(seconds)) * 1000)
+        seconds = int(seconds)
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        seconds = seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
+    
     @staticmethod
     def process_single_video(input_file, output_file, model_path, device, ai_sensitivity, animation_setting, log_func):
         """Process a single video file with AI-determined onomatopoeia."""
@@ -156,9 +214,9 @@ class VideoProcessor:
             # Get track 3 audio path for onomatopoeia
             track3_audio_path = os.path.join(temp_dir, "track3_audio.wav")
             
-            # Process AI onomatopoeia detection with sensitivity setting
+            # FIXED: Pass original input_file for multimodal analysis
             onomatopoeia_file_path, onomatopoeia_events = VideoProcessor.process_onomatopoeia(
-                track3_audio_path, temp_dir, animation_setting, ai_sensitivity, log_func
+                track3_audio_path, temp_dir, animation_setting, ai_sensitivity, log_func, input_file
             )
             
             # Rest of the method remains the same...

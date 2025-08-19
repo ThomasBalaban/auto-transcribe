@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 import torch
 from typing import List, Dict, Optional, Tuple
-from transformers import VideoMAEModel, VideoMAEProcessor, XCLIPModel, XCLIPProcessor
+from transformers import VideoMAEModel, VideoMAEImageProcessor, XCLIPModel, XCLIPProcessor
 from PIL import Image
 import os
 
@@ -19,10 +19,11 @@ class VideoAnalyzer:
         self.device = device if torch.backends.mps.is_available() else "cpu"
         self.log_func = log_func or print
         
-        # Video processing parameters
+        # Video processing parameters - FIXED for model requirements
         self.target_fps = 16  # Sample frames at 16 FPS for analysis
         self.frame_size = (224, 224)  # Standard size for video models
-        self.max_frames_per_chunk = 32  # VideoMAE input limit
+        self.videomae_frames = 16  # VideoMAE expects 16 frames
+        self.xclip_frames = 8     # X-CLIP expects 8 frames
         
         # Models will be loaded lazily
         self.videomae_model = None
@@ -40,8 +41,8 @@ class VideoAnalyzer:
             
             # Load VideoMAE for general video features
             self.log_func("Loading VideoMAE model...")
-            self.videomae_model = VideoMAE.from_pretrained("MCG-NJU/videomae-base")
-            self.videomae_processor = VideoMAEProcessor.from_pretrained("MCG-NJU/videomae-base")
+            self.videomae_model = VideoMAEModel.from_pretrained("MCG-NJU/videomae-base")
+            self.videomae_processor = VideoMAEImageProcessor.from_pretrained("MCG-NJU/videomae-base")
             self.videomae_model.to(self.device)
             
             # Load X-CLIP for action classification
@@ -59,7 +60,7 @@ class VideoAnalyzer:
             raise
 
     def extract_frames_from_video(self, video_path: str, start_time: float, 
-                                 duration: float) -> List[np.ndarray]:
+                             duration: float) -> List[np.ndarray]:
         """Extract frames from video segment for analysis"""
         try:
             cap = cv2.VideoCapture(video_path)
@@ -80,7 +81,10 @@ class VideoAnalyzer:
             
             cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
             
-            while current_frame < end_frame and len(frames) < self.max_frames_per_chunk:
+            # LIMIT to maximum frames needed (32 max, since we'll resample later)
+            max_frames = 32
+            
+            while current_frame < end_frame and len(frames) < max_frames:
                 ret, frame = cap.read()
                 if not ret:
                     break
@@ -109,13 +113,22 @@ class VideoAnalyzer:
             return None
         
         try:
-            # Convert frames to video tensor
-            video_tensor = np.stack(frames)  # Shape: (num_frames, H, W, C)
-            video_tensor = np.transpose(video_tensor, (3, 0, 1, 2))  # Shape: (C, T, H, W)
+            # VideoMAE expects exactly 16 frames - resample if needed
+            if len(frames) != self.videomae_frames:
+                # Resample to exactly 16 frames
+                indices = np.linspace(0, len(frames)-1, self.videomae_frames, dtype=int)
+                frames = [frames[i] for i in indices]
+            
+            # Convert frames to PIL Images and ensure correct size
+            pil_frames = []
+            for frame in frames:
+                pil_image = Image.fromarray(frame)
+                pil_image = pil_image.resize((224, 224), Image.LANCZOS)
+                pil_frames.append(pil_image)
             
             # Process with VideoMAE
             inputs = self.videomae_processor(
-                list(frames),  # VideoMAE processor expects list of PIL Images
+                images=pil_frames,
                 return_tensors="pt"
             )
             
@@ -127,9 +140,7 @@ class VideoAnalyzer:
             # Extract features
             with torch.no_grad():
                 outputs = self.videomae_model(**inputs, output_hidden_states=True)
-                
-                # Get the last hidden state as general video features
-                video_features = outputs.last_hidden_state.mean(dim=1)  # Average over sequence
+                video_features = outputs.last_hidden_state.mean(dim=1)
                 
                 # Calculate derived metrics
                 motion_score = self._calculate_motion_score(frames)
@@ -147,14 +158,37 @@ class VideoAnalyzer:
                 
         except Exception as e:
             self.log_func(f"Error in VideoMAE feature extraction: {e}")
-            return None
-
+            # Return manual analysis if VideoMAE fails
+            try:
+                motion_score = self._calculate_motion_score(frames)
+                brightness_variance = self._calculate_brightness_variance(frames)
+                edge_density = self._calculate_edge_density(frames)
+                
+                return {
+                    "videomae_features": None,
+                    "motion_score": motion_score,
+                    "brightness_variance": brightness_variance,
+                    "edge_density": edge_density,
+                    "num_frames": len(frames),
+                    "visual_complexity": edge_density * brightness_variance
+                }
+            except Exception as fallback_error:
+                self.log_func(f"Fallback analysis also failed: {fallback_error}")
+                return None
+            
+   
     def classify_action_xclip(self, frames: List[np.ndarray]) -> Optional[Dict]:
         """Classify action type using X-CLIP"""
         if not frames or not self.xclip_model:
             return None
         
         try:
+            # X-CLIP expects exactly 8 frames - resample if needed
+            if len(frames) != self.xclip_frames:
+                # Resample to exactly 8 frames
+                indices = np.linspace(0, len(frames)-1, self.xclip_frames, dtype=int)
+                frames = [frames[i] for i in indices]
+            
             # Gaming action categories optimized for horror/action games
             action_types = [
                 "character attacking with weapon",
@@ -172,10 +206,10 @@ class VideoAnalyzer:
             # Convert frames to PIL Images
             pil_frames = [Image.fromarray(frame) for frame in frames]
             
-            # Process with X-CLIP
+            # Process with X-CLIP - ensure correct format
             inputs = self.xclip_processor(
                 text=action_types,
-                videos=pil_frames,
+                videos=[pil_frames],  # X-CLIP expects a list of video sequences
                 return_tensors="pt",
                 padding=True
             )
