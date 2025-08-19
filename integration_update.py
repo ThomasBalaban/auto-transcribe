@@ -62,7 +62,7 @@ class AdaptiveOnomatopoeiaDetector:
                 log_func=log_func
             )
         elif self.system_type == "enhanced":
-            self.detector = EnhancedOnomatopoeiaDetector(
+            self.detector = EnhancedOnomatopoeiaDetector( # type: ignore
                 sensitivity=sensitivity,
                 log_func=log_func
             )
