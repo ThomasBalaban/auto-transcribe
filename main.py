@@ -1,6 +1,7 @@
 """
 SimpleAutoSubs - Main Application
-Dual track subtitle generator with animated onomatopoeia effects.
+Dual track subtitle generator with multimodal animated onomatopoeia effects.
+Simplified to use the unified detection system.
 """
 
 import os
@@ -19,7 +20,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 class DualSubtitleApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("SimpleAutoSubs - Dual Track Subtitler")
+        self.root.title("SimpleAutoSubs - Multimodal Onomatopoeia Subtitler")
         
         # Threading and logging
         self.message_queue = queue.Queue()
@@ -47,7 +48,7 @@ class DualSubtitleApp:
         self.output_dir_entry = UISetup.create_output_directory_section(frame, self)
         self.model_var, self.device_var = UISetup.create_model_settings_section(frame, self)
         
-        # Create onomatopoeia section with AI sensitivity (this returns confidence_var and animation_var)
+        # Create onomatopoeia section
         self.confidence_var, self.animation_var = UISetup.create_onomatopoeia_section(frame, self)
         
         self.progress_label, self.progress_bar = UISetup.create_progress_section(frame)
@@ -78,16 +79,12 @@ class DualSubtitleApp:
         finally:
             self.root.after(100, self.process_log_messages)
 
-    # Test functions (delegated to TestDialogs)
-    def check_whisperx_availability(self):
-        """Check WhisperX availability."""
-        TestDialogs.check_whisperx_availability(self)
+    # Simplified system checking
+    def check_system_status(self):
+        """Check multimodal system status."""
+        TestDialogs.check_system_status(self)
 
-    def test_onomatopoeia(self):
-        """Test onomatopoeia detection."""
-        TestDialogs.test_onomatopoeia(self)
-
-    # File management methods
+    # File management methods (unchanged)
     def add_files(self):
         """Add multiple files to the list."""
         if len(self.input_files) >= 15:
@@ -198,7 +195,7 @@ class DualSubtitleApp:
             
         return f"{filename}-{counter}{ext}"
 
-    # Processing methods
+    # Processing methods (simplified)
     def start_batch_processing_thread(self):
         """Start the batch processing in a separate thread."""
         if not self.input_files:
@@ -235,11 +232,12 @@ class DualSubtitleApp:
             total_videos = len(self.input_files)
             self.log(f"Starting batch processing of {total_videos} videos...")
             
-            # Log AI settings (updated labels)
+            # Log settings
             animation_type = self.animation_var.get()
-            ai_sensitivity = self.confidence_var.get()
-            self.log(f"Animation Type: {animation_type}")
-            self.log(f"AI Decision Sensitivity: {ai_sensitivity}")
+            ai_sensitivity = float(self.confidence_var.get())
+            self.log(f"Multimodal Detection Settings:")
+            self.log(f"  Animation Type: {animation_type}")
+            self.log(f"  AI Sensitivity: {ai_sensitivity}")
             
             for i, (input_file, output_file) in enumerate(zip(self.input_files, self.output_files)):
                 self.current_process_index = i
@@ -258,14 +256,14 @@ class DualSubtitleApp:
                 self.log(f"Output: {output_file}")
                 self.log(f"{'='*40}\n")
                 
-                # Use VideoProcessor for the actual processing (now with AI sensitivity)
+                # Use simplified VideoProcessor
                 VideoProcessor.process_single_video(
                     input_file, 
                     output_file, 
                     self.model_var.get(),
                     self.device_var.get(),
-                    float(self.confidence_var.get()),  # Now this is AI sensitivity
-                    self.animation_var.get(),
+                    ai_sensitivity,
+                    animation_type,
                     self.log
                 )
                 
@@ -322,8 +320,8 @@ def main():
     ctk.set_default_color_theme("blue")
     
     root = ctk.CTk()
-    root.title("SimpleAutoSubs - Dual Track Subtitler")
-    root.geometry("700x750")  # Slightly taller to accommodate new controls
+    root.title("SimpleAutoSubs - Multimodal Onomatopoeia Subtitler")
+    root.geometry("700x750")
     
     app = DualSubtitleApp(root)
     root.mainloop()

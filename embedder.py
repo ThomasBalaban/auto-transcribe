@@ -1,7 +1,12 @@
+"""
+Simplified embedder module for backward compatibility.
+Points to the main subtitle processing functions.
+"""
+
 from subtitle_converter import convert_to_srt
 from subtitle_embedder import embed_dual_subtitles, embed_single_subtitles, embed_subtitles
 import subtitle_styles
-from modern_onomatopoeia_detector import ModernOnomatopoeiaDetector
+from onomatopoeia_detector import OnomatopoeiaDetector
 
 __all__ = [
     "convert_to_srt",
@@ -9,5 +14,5 @@ __all__ = [
     "embed_single_subtitles",
     "embed_subtitles", 
     "subtitle_styles",
-    "ModernOnomatopoeiaDetector",
+    "OnomatopoeiaDetector",
 ]
