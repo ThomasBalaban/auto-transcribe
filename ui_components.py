@@ -297,7 +297,7 @@ class TestDialogs:
                 return
             
             # Test modern system
-            from modern_onomatopoeia_detector import ModernOnomatopoeiaDetector
+            from modern_onomatopoeia_detector import EnhancedOnomatopoeiaDetector as ModernOnomatopoeiaDetector
             detector = ModernOnomatopoeiaDetector(log_func=app.log)
             
             if detector.clap_model and detector.llm_model:
