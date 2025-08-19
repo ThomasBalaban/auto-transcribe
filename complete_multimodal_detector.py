@@ -8,6 +8,7 @@ import numpy as np
 import librosa
 from typing import List, Dict, Optional, Tuple
 import random
+import torch
 
 # Import all our phase components
 from onset_detector import GamingOnsetDetector
@@ -80,7 +81,7 @@ class CompleteMultimodalDetector:
         """Initialize CLAP and Ollama from the original system"""
         try:
             from transformers import ClapModel, ClapProcessor
-            from updated_modern_detector import OllamaLLM
+            from modern_onomatopoeia_detector import OllamaLLM
             
             # Load CLAP model
             self.clap_model = ClapModel.from_pretrained("laion/clap-htsat-unfused")
@@ -107,35 +108,44 @@ class CompleteMultimodalDetector:
             self.log_func(f"COMPLETE MULTIMODAL ANALYSIS: {os.path.basename(video_path)}")
             self.log_func(f"{'='*60}")
             
+            # Check if input is audio-only
+            is_audio_only = video_path.endswith(('.wav', '.mp3', '.flac', '.m4a'))
+            
             # Extract audio if not provided separately
             if audio_path is None:
-                audio_path = self._extract_audio_from_video(video_path)
+                if is_audio_only:
+                    audio_path = video_path  # Use the audio file directly
+                else:
+                    audio_path = self._extract_audio_from_video(video_path)
             
             # Phase 1: Audio onset detection
             self.log_func(f"\n📊 PHASE 1: Audio Onset Detection")
             audio_events = self.onset_detector.detect_gaming_onsets(audio_path)
             
             if not audio_events:
-                self.log_func("No audio events detected - generating video-only analysis")
-                return self._video_only_analysis(video_path)
+                self.log_func("No audio events detected")
+                return []
             
             self.log_func(f"✅ Detected {len(audio_events)} audio onset events")
             
-            # Phase 2: Video analysis at onset timestamps
-            self.log_func(f"\n🎬 PHASE 2: Video Analysis at Onset Timestamps")
-            onset_timestamps = [event['time'] for event in audio_events]
-            video_analyses = self.video_analyzer.analyze_video_at_timestamps(
-                video_path, onset_timestamps, window_duration=2.0
-            )
-            
-            self.log_func(f"✅ Completed video analysis for {len(video_analyses)} timestamps")
+            # Phase 2: Video analysis (skip for audio-only files)
+            video_analyses = []
+            if not is_audio_only:
+                self.log_func(f"\n🎬 PHASE 2: Video Analysis at Onset Timestamps")
+                onset_timestamps = [event['time'] for event in audio_events]
+                video_analyses = self.video_analyzer.analyze_video_at_timestamps(
+                    video_path, onset_timestamps, window_duration=2.0
+                )
+                self.log_func(f"✅ Completed video analysis for {len(video_analyses)} timestamps")
+            else:
+                self.log_func(f"\n🎬 PHASE 2: Skipping video analysis (audio-only file)")
             
             # Phase 3: Enhanced audio analysis with CLAP
             self.log_func(f"\n🎯 PHASE 3: Enhanced Audio Analysis")
             enhanced_audio_events = self._enhance_audio_events(audio_events, audio_path)
             
-            # Phase 4: Multimodal fusion
-            self.log_func(f"\n🔄 PHASE 4: Multimodal Fusion")
+            # Phase 4: Multimodal fusion (handles both video and audio-only cases)
+            self.log_func(f"\n🔄 PHASE 4: {'Multimodal Fusion' if not is_audio_only else 'Audio-Only Processing'}")
             final_effects = self.fusion_engine.process_multimodal_events(
                 enhanced_audio_events, video_analyses
             )
@@ -144,11 +154,10 @@ class CompleteMultimodalDetector:
             self.log_func(f"\n🎮 PHASE 5: Gaming Content Optimization")
             optimized_effects = self._apply_gaming_optimizations(final_effects)
             
-            self.log_func(f"\n🎉 MULTIMODAL ANALYSIS COMPLETE!")
+            self.log_func(f"\n🎉 {'MULTIMODAL' if not is_audio_only else 'AUDIO-ONLY'} ANALYSIS COMPLETE!")
             self.log_func(f"   - Audio events: {len(audio_events)}")
             self.log_func(f"   - Video analyses: {len(video_analyses)}")
             self.log_func(f"   - Final effects: {len(optimized_effects)}")
-            self.log_func(f"   - Spam reduction: ~{100 - (len(optimized_effects)/max(len(audio_events), 1)*100):.0f}%")
             
             return optimized_effects
             
@@ -326,6 +335,13 @@ class CompleteMultimodalDetector:
             cap = cv2.VideoCapture(video_path)
             fps = cap.get(cv2.CAP_PROP_FPS)
             frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+            
+            # Fix division by zero
+            if fps <= 0:
+                fps = 30.0  # Default FPS
+            if frame_count <= 0:
+                frame_count = fps * 60  # Default to 1 minute
+                
             duration = frame_count / fps
             cap.release()
             
@@ -333,6 +349,12 @@ class CompleteMultimodalDetector:
             video_events = []
             for start_time in np.arange(0, duration, 2.0):
                 chunk_duration = min(2.0, duration - start_time)
+                
+                # For audio-only files, skip video analysis
+                if video_path.endswith('.wav') or video_path.endswith('.mp3'):
+                    self.log_func("Audio-only file detected, skipping video analysis")
+                    return []
+                
                 analysis = self.video_analyzer.analyze_video_chunk(
                     video_path, start_time, chunk_duration
                 )
@@ -360,7 +382,7 @@ class CompleteMultimodalDetector:
         except Exception as e:
             self.log_func(f"Video-only analysis failed: {e}")
             return []
-
+        
     def _video_to_onomatopoeia(self, action: str) -> str:
         """Convert video action to onomatopoeia"""
         action_lower = action.lower()

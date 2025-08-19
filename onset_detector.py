@@ -34,47 +34,69 @@ class GamingOnsetDetector:
         self.log_func(f"   Sensitivity: {sensitivity}")
         self.log_func(f"   Thresholds: Major={self.major_onset_threshold:.2f}, Medium={self.medium_onset_threshold:.2f}, Quick={self.quick_onset_threshold:.2f}")
 
+
     def detect_multi_tier_onsets(self, audio: np.ndarray, sr: int) -> Dict[str, List[float]]:
         """Detect onsets at multiple sensitivity levels"""
         
-        # Tier 1: Major events (explosions, big impacts)
-        major_onsets = librosa.onset.onset_detect(
-            y=audio, 
-            sr=sr,
-            units='time',
-            threshold=self.major_onset_threshold,
-            pre_max=0.05,   # Must be peak for 50ms
-            post_max=0.05,
-            wait=self.major_min_spacing
-        )
-        
-        # Tier 2: Medium events (gunshots, crashes)  
-        medium_onsets = librosa.onset.onset_detect(
-            y=audio,
-            sr=sr, 
-            units='time',
-            threshold=self.medium_onset_threshold,
-            pre_max=0.03,   # Must be peak for 30ms
-            post_max=0.03,
-            wait=self.medium_min_spacing
-        )
-        
-        # Tier 3: Quick events (UI sounds, small impacts)
-        quick_onsets = librosa.onset.onset_detect(
-            y=audio,
-            sr=sr,
-            units='time', 
-            threshold=self.quick_onset_threshold,
-            pre_max=0.02,   # Must be peak for 20ms
-            post_max=0.02,
-            wait=self.quick_min_spacing
-        )
-        
-        return {
-            'major': major_onsets.tolist(),
-            'medium': medium_onsets.tolist(), 
-            'quick': quick_onsets.tolist()
-        }
+        # Use librosa's onset_detect with proper parameters for 0.11.0
+        try:
+            # Tier 1: Major events (explosions, big impacts)
+            major_onsets = librosa.onset.onset_detect(
+                y=audio, 
+                sr=sr,
+                units='time',
+                # Use the delta parameter instead of threshold
+                delta=self.major_onset_threshold,
+                pre_max=0.05,
+                post_max=0.05,
+                wait=self.major_min_spacing
+            )
+            
+            # Tier 2: Medium events (gunshots, crashes)  
+            medium_onsets = librosa.onset.onset_detect(
+                y=audio,
+                sr=sr, 
+                units='time',
+                delta=self.medium_onset_threshold,
+                pre_max=0.03,
+                post_max=0.03,
+                wait=self.medium_min_spacing
+            )
+            
+            # Tier 3: Quick events (UI sounds, small impacts)
+            quick_onsets = librosa.onset.onset_detect(
+                y=audio,
+                sr=sr,
+                units='time', 
+                delta=self.quick_onset_threshold,
+                pre_max=0.02,
+                post_max=0.02,
+                wait=self.quick_min_spacing
+            )
+            
+            return {
+                'major': major_onsets.tolist(),
+                'medium': medium_onsets.tolist(), 
+                'quick': quick_onsets.tolist()
+            }
+            
+        except Exception as e:
+            self.log_func(f"Onset detection error: {e}")
+            # Fallback to simple detection
+            try:
+                basic_onsets = librosa.onset.onset_detect(
+                    y=audio,
+                    sr=sr,
+                    units='time'
+                )
+                return {
+                    'major': basic_onsets.tolist()[:5],  # Limit to 5 major events
+                    'medium': basic_onsets.tolist()[5:15],  # Next 10 as medium
+                    'quick': basic_onsets.tolist()[15:25]   # Next 10 as quick
+                }
+            except Exception as fallback_error:
+                self.log_func(f"Fallback onset detection failed: {fallback_error}")
+                return {'major': [], 'medium': [], 'quick': []}
 
     def detect_rapid_sequences(self, onsets: List[float], max_gap: float = 0.4) -> List[Tuple[float, float, int]]:
         """Detect rapid-fire sequences (machine gun, explosions)"""

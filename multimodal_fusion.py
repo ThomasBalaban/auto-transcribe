@@ -338,26 +338,33 @@ class MultimodalFusionEngine:
             if video_analysis:
                 visual_drama = video_analysis.get('visual_drama_score', 0)
                 temporal_alignment = self.calculate_temporal_alignment(audio_event, video_analysis)
+                is_audio_only = False
             else:
                 visual_drama = 0.0
                 temporal_alignment = 0.5
+                is_audio_only = True
             
             self.log_func(f"   Audio drama: {audio_drama:.2f}")
             self.log_func(f"   Visual drama: {visual_drama:.2f}")
             self.log_func(f"   Temporal alignment: {temporal_alignment:.2f}")
             
-            # Calculate combined confidence
-            weighted_drama = (audio_drama * self.audio_weight + 
-                            visual_drama * self.video_weight)
-            
-            # Temporal alignment affects final confidence
-            final_confidence = weighted_drama * (0.5 + 0.5 * temporal_alignment)
-            
-            self.log_func(f"   Combined confidence: {final_confidence:.2f}")
+            # ADJUSTED LOGIC FOR AUDIO-ONLY
+            if is_audio_only:
+                # For audio-only, use pure audio confidence with lower threshold
+                final_confidence = audio_drama
+                confidence_threshold = 0.3  # Lower threshold for audio-only
+                self.log_func(f"   Audio-only confidence: {final_confidence:.2f}")
+            else:
+                # For video files, use weighted combination
+                weighted_drama = (audio_drama * self.audio_weight + 
+                                visual_drama * self.video_weight)
+                final_confidence = weighted_drama * (0.5 + 0.5 * temporal_alignment)
+                confidence_threshold = self.min_confidence_threshold
+                self.log_func(f"   Combined confidence: {final_confidence:.2f}")
             
             # Decision threshold
-            if final_confidence < self.min_confidence_threshold:
-                self.log_func(f"   ❌ Below threshold ({self.min_confidence_threshold})")
+            if final_confidence < confidence_threshold:
+                self.log_func(f"   ❌ Below threshold ({confidence_threshold})")
                 return False, {}
             
             # Generate effect details
@@ -396,7 +403,7 @@ class MultimodalFusionEngine:
         except Exception as e:
             self.log_func(f"   💥 Fusion error: {e}")
             return False, {}
-
+    
     def process_multimodal_events(self, audio_events: List[Dict], 
                                 video_analyses: List[Dict]) -> List[Dict]:
         """Process all audio events with video context for final effects"""
