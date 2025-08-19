@@ -4,7 +4,7 @@ Replaces chunking with intelligent sound event detection.
 """
 
 import numpy as np
-import librosa
+import librosa # type: ignore
 import random
 from typing import List, Dict, Tuple
 
@@ -346,7 +346,7 @@ def test_gaming_onset_detection():
     audio[impact_idx:impact_idx+5000] += 0.5 * np.sin(2 * np.pi * 200 * t[impact_idx:impact_idx+5000])
     
     # Save test audio
-    import soundfile as sf
+    import soundfile as sf # type: ignore
     sf.write("test_gaming_audio.wav", audio, sr)
     
     # Test detection

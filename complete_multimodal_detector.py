@@ -5,7 +5,7 @@ Integrates onset detection + video analysis + multimodal fusion for gaming conte
 
 import os
 import numpy as np
-import librosa
+import librosa # type: ignore
 from typing import List, Dict, Optional, Tuple
 import random
 import torch
