@@ -10,6 +10,7 @@ import queue
 import customtkinter as ctk # type: ignore
 import traceback
 from tkinter import filedialog, messagebox
+from multimodal_events import MultimodalOnomatopoeia, Config, sliding_windows
 
 from ui_components import UISetup, TestDialogs
 from video_processor import VideoProcessor

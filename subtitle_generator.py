@@ -113,3 +113,49 @@ class SubtitleGenerator:
         minutes = (seconds % 3600) // 60
         seconds = seconds % 60
         return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
+
+_onomatopoeia_lines: List[Dict] = []
+
+def clear_onomatopoeia() -> None:
+    _onomatopoeia_lines.clear()
+
+def add_onomatopoeia(word, start, peak, end, cls, ctx) -> None:
+    _onomatopoeia_lines.append({
+        "text": str(word),
+        "start": float(start),
+        "peak": float(peak),
+        "end": float(end),
+        "class": str(cls),
+        "context": list(ctx) if ctx is not None else [],
+    })
+
+def get_onomatopoeia_lines() -> List[Dict]:
+    return list(_onomatopoeia_lines)
+
+def get_events_for_generator() -> List[Dict]:
+    """
+    Adapt the collected lines into the shape SubtitleGenerator.create_subtitle_file expects,
+    and also include fields useful for the ASS animator.
+    Keys provided:
+      - for SRT: word, start_time, end_time
+      - for ASS: word, start, end, peak_time (optional), class, context
+    """
+    events = []
+    for it in _onomatopoeia_lines:
+        events.append({
+            "word": it["text"],
+
+            # SRT keys
+            "start_time": it["start"],
+            "end_time": it["end"],
+
+            # ASS / animator-friendly keys
+            "start": it["start"],
+            "end": it["end"],
+            "peak_time": it.get("peak"),
+
+            "class": it.get("class"),
+            "context": it.get("context", []),
+        })
+    return events
+
