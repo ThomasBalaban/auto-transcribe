@@ -219,7 +219,7 @@ class TestDialogs:
                     app.log("⚠️  Animation System: Not available")
                 
                 # Check Ollama
-                if hasattr(detector, 'ollama_llm') and detector.ollama_llm and detector.ollama_llm.available:
+                if hasattr(detector, 'audio_enhancer') and detector.audio_enhancer and hasattr(detector.audio_enhancer, 'ollama_llm') and detector.audio_enhancer.ollama_llm and detector.audio_enhancer.ollama_llm.available:
                     app.log("✅ Ollama LLM: Connected")
                 else:
                     app.log("⚠️  Ollama LLM: Not available (using fallback)")
