@@ -56,74 +56,61 @@ class OnomatopoeiaDetector:
             self.log_func(f"FATAL: Failed to initialize components: {e}")
             raise
 
+    def _classify_impact_tier(self, event: Dict) -> int:
+        """Classifies an event into one of the four impact tiers."""
+        word = event.get('word', '').upper()
+        context = event.get('context', '').lower()
+
+        # Tier 1: Critical
+        if any(w in word for w in ["GUNSHOT", "EXPLOSION", "DEATH"]) or "violence" in context:
+            return 1
+        # Tier 2: High
+        if any(w in word for w in ["PUNCH", "KICK", "CRASH", "FALL"]) or "water" in context:
+            return 2
+        # Tier 4: Low
+        if any(w in word for w in ["FOOTSTEPS", "LADDER", "AMBIENT"]):
+            return 4
+        # Tier 3: Medium (Default)
+        return 3
+
     def _filter_events_with_enhanced_cooldown(self, events: List[Dict]) -> List[Dict]:
         """
-        Enhanced cooldown system that adapts to sound types and energy levels.
+        Applies the new hierarchical cooldown system.
         """
         if not events:
             return []
 
-        self.log_func(f"⚡ Applying enhanced smart cooldown with adaptive timing...")
-        
-        # Calculate impact scores and add timing metadata
+        self.log_func("Applying hierarchical impact cooldowns...")
+
+        # First, classify the tier for each event
         for event in events:
-            event['impact_score'] = self._calculate_enhanced_impact_score(event)
-            event['sound_category'] = self._categorize_sound(event)
+            event['tier_val'] = self._classify_impact_tier(event)
 
         events.sort(key=lambda x: x['time'])
-        
-        significant_events = []
-        last_major_impact_time = -999
-        
+
+        final_events = []
+        last_event_time = {1: -999, 2: -999, 3: -999, 4: -999}
+        cooldowns = {1: 10.0, 2: 5.0, 3: 2.5, 4: 1.0} # Tier-based cooldowns
+
         for event in events:
-            current_time = event['time']
-            sound_category = event['sound_category']
-            impact_score = event['impact_score']
+            tier = event['tier_val']
+            time = event['time']
             
-            # Calculate adaptive cooldown based on sound type and previous events
-            cooldown_period = self._calculate_adaptive_cooldown(
-                event, significant_events, last_major_impact_time
-            )
+            # Check if the event is on cooldown from a higher or equal tier event
+            on_cooldown = False
+            for i in range(1, tier + 1):
+                if time - last_event_time[i] < cooldowns[i]:
+                    self.log_func(f"-> SKIP (Tier {tier}): '{event.get('word', 'N/A')}' at {time:.2f}s is on cooldown.")
+                    on_cooldown = True
+                    break
             
-            # Check if enough time has passed since last significant event
-            if significant_events:
-                time_since_last = current_time - significant_events[-1]['time']
-                
-                # For similar sounds, require longer cooldown
-                if self._sounds_are_similar(event, significant_events[-1]):
-                    required_cooldown = cooldown_period * 1.5
-                else:
-                    required_cooldown = cooldown_period
-                
-                if time_since_last < required_cooldown:
-                    # Check if current event is significantly more impactful
-                    last_impact = significant_events[-1]['impact_score']
-                    if impact_score > last_impact * 1.3:  # 30% more impactful
-                        self.log_func(f"  -> OVERRIDE: {event['time']:.2f}s "
-                                    f"({sound_category}, impact: {impact_score:.2f}) "
-                                    f"overrides {significant_events[-1]['time']:.2f}s "
-                                    f"(impact: {last_impact:.2f})")
-                        significant_events[-1] = event
-                        if impact_score > 2.0:  # High impact event
-                            last_major_impact_time = current_time
-                    else:
-                        self.log_func(f"  -> SKIP: {current_time:.2f}s "
-                                    f"({sound_category}) too close to previous event "
-                                    f"({time_since_last:.2f}s < {required_cooldown:.2f}s)")
-                    continue
-            
-            # Event passes cooldown check
-            significant_events.append(event)
-            self.log_func(f"  -> KEEP: {current_time:.2f}s "
-                         f"({sound_category}, impact: {impact_score:.2f})")
-            
-            # Update major impact tracking
-            if impact_score > 2.0:
-                last_major_impact_time = current_time
-
-        self.log_func(f"⚡ Enhanced cooldown complete. Kept {len(significant_events)} of {len(events)} events.")
-        return significant_events
-
+            if not on_cooldown:
+                final_events.append(event)
+                last_event_time[tier] = time
+        
+        self.log_func(f"Hierarchical cooldown complete. Kept {len(final_events)} of {len(events)} events.")
+        return final_events
+    
     def _calculate_enhanced_impact_score(self, event: Dict) -> float:
         """Calculate enhanced impact score with multiple factors."""
         energy = event.get('energy', 0.5)
@@ -286,7 +273,7 @@ class OnomatopoeiaDetector:
         
         for group in event_groups:
             # Use the most significant event in the group as the timing reference
-            primary_event = max(group, key=lambda e: e['impact_score'])
+            primary_event = max(group, key=lambda e: e.get('impact_score', 0))
             analysis_time = primary_event['time']
             
             # Analyze video around this time

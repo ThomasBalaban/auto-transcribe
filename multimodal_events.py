@@ -1,26 +1,12 @@
 """
 Save this file as: multimodal_events.py
 
-Drop-in multimodal onomatopoeia engine.
-- Audio + video candidate proposals
-- Hypothesis tracking & verification (handles "who shot?" and underwater cases)
-- Loudness-aware scoring so big moments win
-- Context-aware word picker with constrained morphs
+Generalized multimodal onomatopoeia engine.
+- Detects events based on universal audio-visual cues (transients, motion, flashes).
+- Uses adaptive thresholds and relative scoring for broad applicability.
+- Chooses onomatopoeia based on the physical characteristics of the event.
 
 Dependencies: numpy, scipy, librosa, opencv-python
-
-Typical use from your pipeline (pseudo):
-
-    engine = MultimodalOnomatopoeia(cfg=Config())
-    for win in windows:  # each win ~0.5-1.0s
-        events = engine.process_window(audio_chunk, sr, video_frames, frame_times, t0, t1)
-        for e in events:
-            word = engine.pick_word(e)
-            # pass (word, e.t_start, e.t_peak, e.t_end, e.position_hint) to your subtitle/animation layer
-
-Notes:
-- This file includes minimal heuristics for SED and optical flow so you can run today.
-  Swap DummySED with a real model (e.g., PANNs/HTS-AT) when ready.
 """
 from __future__ import annotations
 
@@ -32,444 +18,146 @@ import cv2
 
 try:
     import librosa
-except Exception:  # fallback if librosa missing
+except ImportError:
     librosa = None
 
 # --------------------------
-# Data models
+# Data Models & Config
 # --------------------------
-
-@dataclass
-class LoudnessProfile:
-    lufs_short: float
-    lufs_integrated: float
-    crest_db: float
-    floor_db: float
-    broadband_ratio: float
-
-@dataclass
-class Candidate:
-    t: float
-    source: Literal["audio", "video"]
-    labels: List[str]
-    conf: float
-    feats: Dict[str, float] = field(default_factory=dict)
 
 @dataclass
 class Event:
-    cls: str
-    t: float
-    t_start: float
+    """Represents a significant audio-visual event."""
     t_peak: float
+    t_start: float
     t_end: float
     score: float = 0.0
+    intensity: float = 0.0  # Normalized 0-1 measure of energy/impact
     context: Set[str] = field(default_factory=set)
     features: Dict[str, float] = field(default_factory=dict)
-    position_hint: Optional[Tuple[float, float]] = None  # normalized (x,y) if known
+    position_hint: Optional[Tuple[float, float]] = None
 
 @dataclass
-class Hypothesis:
-    cls: str
-    t_audio: Optional[float] = None
-    t_video: Optional[float] = None
-    conf_audio: float = 0.0
-    conf_video: float = 0.0
-    context: Set[str] = field(default_factory=set)
-    state: Literal["pending", "verified", "rejected"] = "pending"
-    expires_at: float = 0.0
-
-# --------------------------
-# Config
-# --------------------------
+class Candidate:
+    """A potential event candidate from either audio or video stream."""
+    t: float
+    source: Literal["audio", "video"]
+    label: str  # e.g., "audio_transient", "visual_motion_burst"
+    confidence: float
+    features: Dict[str, float] = field(default_factory=dict)
 
 class Config:
-    verify_window_sec: float = 2.0
-    nms_radius_sec: float = 0.35
-    cooldown_hi_sec: float = 0.8
-    min_audio_conf: float = 0.6
-    # thresholds (initial heuristics, tune per project)
-    transient_peak_prominence: float = 0.6
-    motion_burst_thresh: float = 1.5  # multiplier vs rolling median
-    flash_thresh: float = 40.0         # brightness delta
-    water_hue_lo: int = 75             # HSV ~ blue-green
-    water_hue_hi: int = 110
-    water_sat_min: int = 60
-    underwater_lowpass_hz: int = 1200
-    reverb_rt60_proxy_ms: int = 250
+    """General configuration for the multimodal engine."""
+    # Time windows
+    VERIFY_WINDOW_SEC: float = 1.0  # How long to wait for a matching event from another modality
+    NMS_RADIUS_SEC: float = 0.4     # Non-maximum suppression window to avoid duplicate events
+    COOLDOWN_SEC: float = 0.5       # Cooldown period after a major event to reduce noise
 
-    # Priority mapping for classes
-    priority: Dict[str, float] = {
-        "punch": 3.2,
-        "impact": 3.0,
-        "gunshot": 3.0,
-        "explosion": 2.8,
-        "splash": 2.4,
-        "glass": 2.2,
-        "vehicle": 1.8,
-        "footsteps": 0.8,
-        "ladder": 0.6,
-        "typing": 0.3,
-    }
+    # Audio thresholds (adaptive)
+    TRANSIENT_PROMINENCE_PERCENTILE: float = 92.0 # Detects sharp sounds relative to local audio
+    MIN_AUDIO_CONFIDENCE: float = 0.4
+
+    # Video thresholds (adaptive)
+    MOTION_BURST_MULTIPLIER: float = 2.5  # How much motion must exceed the rolling average
+    FLASH_DELTA_THRESHOLD: float = 50.0   # Brightness change to be considered a flash
+    MIN_VIDEO_CONFIDENCE: float = 0.5
+
+    # Context detection
+    WATER_HUE_RANGE: Tuple[int, int] = (90, 130) # HSV Hue range for blues/cyans
+    WATER_SATURATION_MIN: int = 70
 
 # --------------------------
-# Utility: Loudness & dynamics
+# Feature Extractors
 # --------------------------
 
-def compute_loudness_profile(y: np.ndarray, sr: int) -> LoudnessProfile:
-    """Compute simple loudness/dynamics features (lufs-ish values are relative)."""
-    if y.size == 0:
-        return LoudnessProfile(-60.0, -60.0, 0.0, -60.0, 0.0)
+def get_audio_candidates(y: np.ndarray, sr: int, cfg: Config) -> List[Candidate]:
+    """Proposes audio event candidates based on acoustic properties."""
+    if not librosa or y.size < sr // 10:
+        return []
 
-    # RMS and peak
-    rms = np.sqrt(np.mean(y**2) + 1e-12)
-    peak = np.max(np.abs(y) + 1e-12)
-    crest = 20*np.log10(peak/(rms+1e-12) + 1e-12)
+    # 1. Detect sharp transients using spectral flux
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=256)
+    if not np.any(onset_env) or np.max(onset_env) == 0: return []
 
-    # Integrated level (pseudo-LUFS)
-    lufs_integrated = 20*np.log10(rms + 1e-12)
+    prominence_thresh = np.percentile(onset_env, cfg.TRANSIENT_PROMINENCE_PERCENTILE)
+    peaks, props = find_peaks(onset_env, prominence=prominence_thresh)
 
-    # Short term over 400 ms
-    win = max(1, int(0.4*sr))
-    if y.size >= win:
-        frames = y[: y.size - (y.size % win)].reshape(-1, win)
-        rms_short = np.sqrt(np.mean(frames**2, axis=1) + 1e-12)
-        lufs_short = float(np.median(20*np.log10(rms_short + 1e-12)))
-        floor_db = float(np.percentile(20*np.log10(np.abs(y)+1e-12), 15))
-    else:
-        lufs_short = lufs_integrated
-        floor_db = lufs_integrated - 20
-
-    # Broadband ratio via STFT bands
-    if librosa is not None and y.size > sr//10:
-        S = np.abs(librosa.stft(y, n_fft=1024, hop_length=256))
+    candidates = []
+    for p, prom in zip(peaks, props['prominences']):
+        t = librosa.frames_to_time(p, sr=sr, hop_length=256)
+        confidence = min(1.0, prom / (np.max(onset_env) * 0.5))
+        
+        # Analyze frequency content at the transient
+        stft = np.abs(librosa.stft(y, n_fft=1024, hop_length=256))
+        # Ensure peak index is within STFT bounds
+        if p >= stft.shape[1]: continue
+        frame = stft[:, p]
         freqs = librosa.fft_frequencies(sr=sr, n_fft=1024)
-        wide = S[(freqs >= 200) & (freqs <= 6000)].sum()
-        narrow = S[(freqs >= 1000) & (freqs <= 2000)].sum() + 1e-9
-        broadband_ratio = float(wide / narrow)
-    else:
-        broadband_ratio = 1.0
+        
+        low_energy = np.sum(frame[freqs < 400])
+        high_energy = np.sum(frame[freqs > 2000])
+        total_energy = np.sum(frame) + 1e-9
 
-    return LoudnessProfile(
-        lufs_short=float(lufs_short),
-        lufs_integrated=float(lufs_integrated),
-        crest_db=float(crest),
-        floor_db=float(floor_db),
-        broadband_ratio=float(broadband_ratio),
-    )
-
-# --------------------------
-# Dummy SED + Flow wrappers (replace with real models later)
-# --------------------------
-
-class DummySED:
-    """Very crude SED based on spectral heuristics; replace with PANNs/HTS-AT."""
-    def infer(self, y: np.ndarray, sr: int) -> List[Tuple[float, str, float]]:
-        # Returns list of (t, label, conf)
-        out = []
-        if y.size < sr//5:
-            return out
-        # Detect broadband transient as impact/punch
-        if librosa is not None:
-            onset_env = librosa.onset.onset_strength(y=y, sr=sr)
-            peaks, _ = find_peaks(onset_env, prominence=np.percentile(onset_env, 85))
-            for p in peaks:
-                t = float(p * (512/sr))  # approx hop 512 default
-                out.append((t, "impact", 0.6))
-        # Very rough gunshot: high crest + high HF energy
-        crest = compute_loudness_profile(y, sr).crest_db
-        if crest > 14:
-            out.append((0.0, "gunshot", min(0.9, (crest-10)/10)))
-        return out
-
-class SimpleFlow:
-    def __init__(self):
-        self.prev_gray = None
-        self.med_win: List[float] = []
-
-    def motion_burst(self, frames: List[np.ndarray], times: List[float]) -> List[Tuple[float, float]]:
-        """Return list of (t, flow_magnitude_mean)."""
-        out = []
-        for f, t in zip(frames, times):
-            gray = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY) if f.ndim == 3 else f
-            if self.prev_gray is None:
-                self.prev_gray = gray
-                out.append((t, 0.0))
-                continue
-            flow = cv2.calcOpticalFlowFarneback(self.prev_gray, gray, None, 0.5, 3, 15, 3, 5, 1.2, 0)
-            mag, _ = cv2.cartToPolar(flow[...,0], flow[...,1])
-            m = float(np.mean(mag))
-            out.append((t, m))
-            self.prev_gray = gray
-        return out
-
-# --------------------------
-# Proposals: audio & video
-# --------------------------
-
-def propose_audio(y: np.ndarray, sr: int, loud: LoudnessProfile, cfg: Config, sed: DummySED) -> List[Candidate]:
-    cands: List[Candidate] = []
-    # Spectral flux / onset curve
-    if librosa is not None and y.size > sr//10:
-        S = np.abs(librosa.stft(y, n_fft=1024, hop_length=256))
-        flux = np.maximum(0.0, np.diff(S, axis=1)).sum(axis=0)
-        flux = flux / (np.max(flux) + 1e-9)
-        peaks, props = find_peaks(flux, prominence=np.percentile(flux, 80))
-        for p, prom in zip(peaks, props.get('prominences', np.zeros_like(peaks))):
-            t = float(p * (256/sr))
-            rel = float(20*np.log10(np.max(np.abs(y)) + 1e-12) - loud.floor_db)
-            cands.append(Candidate(
-                t=t,
-                source="audio",
-                labels=["transient"],
-                conf=float(min(1.0, 0.4 + prom)),
-                feats={
-                    "audio_transient_rel": rel/20.0,
-                    "broadband_ratio": loud.broadband_ratio,
-                }
-            ))
-    # SED labels
-    for t, label, conf in sed.infer(y, sr):
-        cands.append(Candidate(
-            t=float(t), source="audio", labels=[label], conf=float(conf),
-            feats={"audio_transient_rel": max(0.0, (loud.crest_db)/20.0), "broadband_ratio": loud.broadband_ratio}
+        candidates.append(Candidate(
+            t=t,
+            source="audio",
+            label="audio_transient",
+            confidence=float(confidence),
+            features={
+                "low_freq_ratio": float(low_energy / total_energy),
+                "high_freq_ratio": float(high_energy / total_energy),
+            }
         ))
-    return cands
+    return candidates
 
-def _detect_flash_and_water(frame: np.ndarray, cfg: Config) -> Tuple[bool, bool]:
-    # flash: global brightness spike (use frame std/mean ratios)
-    mean = float(np.mean(frame))
-    std = float(np.std(frame))
-    flash = (mean > cfg.flash_thresh) or (std > cfg.flash_thresh)
-    # water/underwater regions in HSV
-    if frame.ndim == 3:
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, (cfg.water_hue_lo, cfg.water_sat_min, 0), (cfg.water_hue_hi, 255, 255))
-        water = (np.mean(mask) > 10)  # percent of pixels
-    else:
-        water = False
-    return flash, water
+def get_video_candidates(frames: List[np.ndarray], times: List[float], cfg: Config) -> List[Candidate]:
+    """Proposes video event candidates based on motion and brightness."""
+    candidates = []
+    if len(frames) < 2: return []
 
-def propose_video(frames: List[np.ndarray], times: List[float], flow: SimpleFlow, cfg: Config) -> List[Candidate]:
-    cands: List[Candidate] = []
-    flows = flow.motion_burst(frames, times)
-    mags = np.array([m for _, m in flows])
-    if mags.size:
-        med = np.median(mags) + 1e-6
-    else:
-        med = 1e-6
-    for (t, m), f in zip(flows, frames):
-        lbls = []
-        conf = 0.0
-        if m > cfg.motion_burst_thresh * med:
-            lbls.append("impact_visual")
-            conf = max(conf, min(1.0, (m/med)/4.0))
-        flash, water = _detect_flash_and_water(f, cfg)
-        if flash:
-            lbls.append("flash")
-            conf = max(conf, 0.6)
-        if water:
-            lbls.append("water_region")
-            conf = max(conf, 0.5)
-        if lbls:
-            cands.append(Candidate(t=float(t), source="video", labels=lbls, conf=float(conf), feats={"motion_burst": float(m/med)}))
-    return cands
+    prev_gray = cv2.cvtColor(frames[0], cv2.COLOR_BGR2GRAY)
+    motion_magnitudes = []
+    brightness_levels = [np.mean(prev_gray)]
 
-# --------------------------
-# Hypothesis tracking & verification
-# --------------------------
+    for f in frames[1:]:
+        gray = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
+        flow = cv2.calcOpticalFlowFarneback(prev_gray, gray, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+        mag, _ = cv2.cartToPolar(flow[...,0], flow[...,1])
+        motion_magnitudes.append(np.mean(mag))
+        brightness_levels.append(np.mean(gray))
+        prev_gray = gray
 
-class HypothesisTracker:
-    def __init__(self, cfg: Config):
-        self.cfg = cfg
-        self.hyps: List[Hypothesis] = []
+    if not motion_magnitudes: return []
 
-    def add_audio(self, label: str, t: float, conf: float):
-        h = Hypothesis(cls=label, t_audio=t, conf_audio=conf, state="pending", expires_at=t + self.cfg.verify_window_sec)
-        self.hyps.append(h)
-
-    def attach_video(self, cls: str, t: float, conf: float):
-        # Attach to nearest matching pending hypothesis or create new
-        best = None
-        best_dt = 9e9
-        for h in self.hyps:
-            if h.cls != cls: continue
-            dt = abs(((h.t_audio if h.t_audio is not None else t) - t))
-            if dt < best_dt and h.state == "pending":
-                best, best_dt = h, dt
-        if best is None:
-            best = Hypothesis(cls=cls, t_video=t, conf_video=conf, state="pending", expires_at=t + self.cfg.verify_window_sec)
-            self.hyps.append(best)
-        else:
-            best.t_video = t
-            best.conf_video = max(best.conf_video, conf)
-
-    def add_context_near(self, t: float, tag: str, radius: float = 0.6):
-        for h in self.hyps:
-            t_ref = h.t_audio if h.t_audio is not None else h.t_video
-            if t_ref is None: continue
-            if abs(t_ref - t) <= radius:
-                h.context.add(tag)
-
-    def finalize_ready(self, t_now: float) -> List[Hypothesis]:
-        ready, keep = [], []
-        for h in self.hyps:
-            if h.state == "pending" and t_now >= h.expires_at:
-                if h.conf_audio >= self.cfg.min_audio_conf or h.conf_video >= 0.6:
-                    h.state = "verified"
-                else:
-                    h.state = "rejected"
-            if h.state == "verified":
-                ready.append(h)
-            elif h.state == "pending":
-                keep.append(h)
-        self.hyps = keep
-        return ready
-
-# --------------------------
-# Scoring, NMS, masking
-# --------------------------
-
-def _priority(cls: str, cfg: Config) -> float:
-    return cfg.priority.get(cls, 0.0)
-
-def _context_boost(cls: str, context: Set[str]) -> float:
-    # simple boosts; tune later
-    if cls == "splash" and ("water" in context or "underwater" in context):
-        return 0.5
-    if cls in {"gunshot", "explosion"} and "indoor_reverb" in context:
-        return 0.2
-    return 0.0
-
-def score_events(events: List[Event], recent: List[Event], cfg: Config) -> List[Event]:
-    def uniqueness(t: float) -> float:
-        # boost if nothing fired recently
-        return float(min(1.0, np.mean([abs(t - e.t) for e in recent[-10:]] or [1.0])))
-
-    for e in events:
-        f = e.features
-        e.score = (
-            1.4 * f.get("audio_transient_rel", 0.0) +
-            1.2 * f.get("motion_burst", 0.0) +
-            0.8 * f.get("broadband_ratio", 0.0) +
-            1.6 * _priority(e.cls, cfg) +
-            1.0 * uniqueness(e.t) -
-            1.2 * f.get("repetitiveness", 0.0) +
-            0.6 * _context_boost(e.cls, e.context)
-        )
-    return events
-
-def temporal_nms(events: List[Event], radius: float) -> List[Event]:
-    kept: List[Event] = []
-    for e in sorted(events, key=lambda x: x.score, reverse=True):
-        if all(abs(e.t - k.t) > radius for k in kept):
-            kept.append(e)
-    return kept
-
-def priority_masking(events: List[Event], cfg: Config) -> List[Event]:
-    out: List[Event] = []
-    last_hi = -1e9
-    for e in sorted(events, key=lambda x: x.t):
-        if _priority(e.cls, cfg) >= 2.0:
-            out.append(e)
-            last_hi = e.t
-        else:
-            if e.t - last_hi > cfg.cooldown_hi_sec:
-                out.append(e)
-    return out
-
-# --------------------------
-# Timestamp refinement
-# --------------------------
-
-def refine_timestamps(events: List[Event], y: np.ndarray, sr: int, frames: List[np.ndarray]) -> List[Event]:
-    # Audio peak refinement
-    for e in events:
-        # refine around e.t within ±120 ms
-        half = int(0.12*sr)
-        center = int(e.t * sr)
-        lo = max(0, center - half)
-        hi = min(y.size, center + half)
-        seg = y[lo:hi]
-        if seg.size > 10:
-            # pick max absolute derivative as transient peak
-            d = np.abs(np.diff(seg))
-            p = int(np.argmax(d))
-            t_peak = (lo + p) / sr
-            e.t_peak = t_peak
-            # crude start/end
-            thresh = 0.2 * np.max(d + 1e-9)
-            # start
-            s = p
-            while s > 1 and d[s-1] > thresh:
-                s -= 1
-            # end
-            q = p
-            while q < d.size-1 and d[q] > thresh:
-                q += 1
-            e.t_start = (lo + max(0, s-1)) / sr
-            e.t_end = (lo + min(d.size-1, q+1)) / sr
-        else:
-            e.t_peak = e.t
-            e.t_start = max(0.0, e.t - 0.08)
-            e.t_end = e.t + 0.15
-    return events
-
-# --------------------------
-# Word selection (prototypes + constrained morphs)
-# --------------------------
-
-PROTOTYPES: Dict[str, List[str]] = {
-    "punch": ["SMACK", "THUD", "WHAM"],
-    "impact": ["THUD", "WHAM", "SMACK"],
-    "gunshot": ["BANG", "BLAM", "KRAK"],
-    "explosion": ["BOOM", "KABOOM"],
-    "splash": ["SPLASH", "SPLISH"],
-    "ladder": ["CLANK", "CLINK"],
-    "typing": ["TAP", "TIK"],
-}
-
-UNDERWATER_MAP: Dict[str, List[str]] = {
-    "punch": ["FWOOMP", "BLUP", "THWUMP"],
-    "impact": ["FWOOMP", "THWUMP"],
-    "gunshot": ["BWUMP", "BLUP"],
-    "splash": ["FWOOMP", "SPLUSH"],
-}
-
-class WordMemory:
-    def __init__(self, max_len: int = 20):
-        self.recent: List[str] = []
-        self.max_len = max_len
-    def push(self, w: str):
-        self.recent.append(w)
-        if len(self.recent) > self.max_len:
-            self.recent = self.recent[-self.max_len:]
-
-
-def constrained_morph(word: str, intensity: float, damped: bool) -> str:
-    # Intensity scales letter doubling and punctuation; damped removes sharp endings
-    w = word
-    if intensity > 1.5 and len(w) >= 3:
-        mid = len(w)//2
-        w = w[:mid] + w[mid]*int(1+min(3, intensity-1)) + w[mid:]
-    if not damped and intensity > 1.2:
-        w = w + "!"
-    if damped:
-        # soften endings: SPLASH -> SPLUSH, BANG -> BWUNG
-        w = w.replace("A", "U").replace("A", "U")
-    return w[:10]
+    motion_median = np.median(motion_magnitudes) + 1e-6
+    for i, t in enumerate(times[1:]):
+        # Motion burst detection
+        mag = motion_magnitudes[i]
+        if mag > motion_median * cfg.MOTION_BURST_MULTIPLIER:
+            candidates.append(Candidate(
+                t=t, source="video", label="visual_motion_burst",
+                confidence=min(1.0, mag / (motion_median * 4 * cfg.MOTION_BURST_MULTIPLIER)), # safer normalization
+                features={"motion_magnitude": mag}
+            ))
+        # Flash detection
+        brightness_delta = abs(brightness_levels[i+1] - brightness_levels[i])
+        if brightness_delta > cfg.FLASH_DELTA_THRESHOLD:
+            candidates.append(Candidate(
+                t=t, source="video", label="visual_flash",
+                confidence=0.8, # Flashes are usually high-confidence events
+                features={"brightness_delta": brightness_delta}
+            ))
+    return candidates
 
 # --------------------------
 # Main Engine
 # --------------------------
 
 class MultimodalOnomatopoeia:
-    def __init__(self, cfg: Config | None = None, sed=None, flow=None):
+    def __init__(self, cfg: Config | None = None):
         self.cfg = cfg or Config()
-        self.sed = sed or DummySED()
-        self.flow = flow or SimpleFlow()
-        self.tracker = HypothesisTracker(self.cfg)
-        self.recent_events: List[Event] = []
-        self.word_memory = WordMemory()
+        self.unmatched_candidates: List[Candidate] = []
+        self.event_history: List[Event] = []
 
     def process_window(
         self,
@@ -477,105 +165,138 @@ class MultimodalOnomatopoeia:
         sr: int,
         video_frames: List[np.ndarray],
         frame_times: List[float],
-        t0: float,
-        t1: float,
+        t_start_abs: float,
     ) -> List[Event]:
-        """Process one window and emit verified, refined Events within [t0,t1]."""
-        # 1) Loudness
-        loud = compute_loudness_profile(audio_chunk, sr)
-        # 2) Proposals
-        acands = propose_audio(audio_chunk, sr, loud, self.cfg, self.sed)
-        vcands = propose_video(video_frames, frame_times, self.flow, self.cfg)
-        # 3) Update hypotheses
-        for c in acands:
-            for lbl in c.labels:
-                if lbl in {"impact", "punch", "gunshot", "explosion", "splash", "ladder"}:
-                    self.tracker.add_audio("punch" if lbl=="impact" else lbl, t0 + c.t, c.conf)
-        for c in vcands:
-            if "flash" in c.labels:
-                self.tracker.attach_video("gunshot", t0 + c.t, c.conf)
-            if "impact_visual" in c.labels:
-                self.tracker.attach_video("punch", t0 + c.t, c.conf)
-            if "water_region" in c.labels:
-                self.tracker.add_context_near(t0 + c.t, "water")
-        # 4) Finalize ready hyps
-        hyps = self.tracker.finalize_ready(t1)
-        # 5) Build events from hyps (rough times)
-        events: List[Event] = []
-        for h in hyps:
-            t_ref = h.t_audio if h.t_audio is not None else h.t_video
-            if t_ref is None: continue
-            # initial windowed start/end
-            e = Event(
-                cls=h.cls,
-                t=t_ref,
-                t_start=max(0.0, t_ref - 0.08),
-                t_peak=t_ref,
-                t_end=t_ref + 0.18,
-                context=set(h.context),
-                features={
-                    "audio_transient_rel": 1.0,
-                    "motion_burst": 1.0,
-                    "broadband_ratio": 1.0,
-                    "repetitiveness": 0.0,
-                },
-            )
-            events.append(e)
-        # 6) Score + NMS + masking
-        events = score_events(events, self.recent_events, self.cfg)
-        events = temporal_nms(events, self.cfg.nms_radius_sec)
-        events = priority_masking(events, self.cfg)
-        # 7) Refine timestamps
-        events = refine_timestamps(events, audio_chunk, sr, video_frames)
-        # 8) Save to history and return
-        self.recent_events.extend(events)
-        self.recent_events = self.recent_events[-100:]
-        return events
+        """Processes one window of audio/video data and returns confirmed events."""
+        # 1. Generate new candidates for this window and adjust timestamps to be absolute
+        audio_cands = get_audio_candidates(audio_chunk, sr, self.cfg)
+        for c in audio_cands: c.t += t_start_abs
+        
+        video_cands = get_video_candidates(video_frames, frame_times, self.cfg)
+        for c in video_cands: c.t += t_start_abs
 
-    def pick_word(self, e: Event) -> str:
-        # Underwater / damped context?
-        damped = ("water" in e.context) or ("underwater" in e.context)
-        base_list = UNDERWATER_MAP.get(e.cls, PROTOTYPES.get(e.cls, [e.cls.upper()])) if damped else PROTOTYPES.get(e.cls, [e.cls.upper()])
-        # Select first not recently used
-        for w in base_list:
-            if w not in self.word_memory.recent:
-                chosen = w
-                break
-        else:
-            chosen = base_list[0]
-        intensity = 1.0 + min(1.5, e.score/4.0)
-        out = constrained_morph(chosen, intensity=intensity, damped=damped)
-        self.word_memory.push(out)
-        return out
+        # 2. Match new candidates with any lingering unmatched ones
+        events = []
+        all_candidates = sorted(self.unmatched_candidates + audio_cands + video_cands, key=lambda x: x.t)
+        
+        matched_indices = set()
+        for i in range(len(all_candidates)):
+            if i in matched_indices: continue
+            cand1 = all_candidates[i]
+            
+            # Find the best cross-modal match within the verification window
+            best_match_idx = -1
+            for j in range(i + 1, len(all_candidates)):
+                if j in matched_indices: continue
+                cand2 = all_candidates[j]
+                
+                # Stop searching if we're past the time window
+                if cand2.t - cand1.t > self.cfg.VERIFY_WINDOW_SEC:
+                    break
+                
+                # Found a cross-modal match
+                if cand1.source != cand2.source:
+                    best_match_idx = j
+                    break
 
-# --------------------------
-# Convenience: simple windowing driver (optional)
-# --------------------------
+            if best_match_idx != -1:
+                cand2 = all_candidates[best_match_idx]
+                matched_indices.add(i)
+                matched_indices.add(best_match_idx)
+                
+                # Create an event from the matched pair
+                combined_features = {cand1.label: cand1.confidence, cand2.label: cand2.confidence, **cand1.features, **cand2.features}
+                peak_time = (cand1.t + cand2.t) / 2.0
+                score = (cand1.confidence + cand2.confidence) / 2.0
+                intensity = np.clip(score + combined_features.get("motion_magnitude", 0) / 10.0, 0, 1)
 
-def sliding_windows(total_dur: float, win: float = 0.8, hop: float = 0.4):
+                events.append(Event(
+                    t_peak=peak_time,
+                    t_start=peak_time - 0.15,
+                    t_end=peak_time + 0.6,
+                    score=score,
+                    intensity=intensity,
+                    features=combined_features
+                ))
+
+        # 3. Update the list of unmatched candidates for the next window
+        self.unmatched_candidates = [
+            cand for i, cand in enumerate(all_candidates) 
+            if i not in matched_indices and (t_start_abs - cand.t < self.cfg.VERIFY_WINDOW_SEC)
+        ]
+
+        # 4. Post-process the generated events
+        if not events:
+            return []
+            
+        # Add context (e.g., underwater)
+        for event in events:
+            if not video_frames or not frame_times: continue
+            closest_frame_idx = np.argmin([abs((t + t_start_abs) - event.t_peak) for t in frame_times])
+            frame = video_frames[closest_frame_idx]
+            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+            
+            water_mask = cv2.inRange(hsv, (self.cfg.WATER_HUE_RANGE[0], self.cfg.WATER_SATURATION_MIN, 20), (self.cfg.WATER_HUE_RANGE[1], 255, 255))
+            if np.mean(water_mask) > 20: # If > 20% of pixels are in water color range
+                event.context.add("underwater")
+
+        # Non-maximum suppression and cooldown
+        events.sort(key=lambda e: e.score, reverse=True)
+        final_events = []
+        for event in events:
+            # NMS check
+            if any(abs(event.t_peak - fe.t_peak) < self.cfg.NMS_RADIUS_SEC for fe in final_events):
+                continue
+            # Cooldown check
+            if any(event.t_peak - he.t_peak > 0 and event.t_peak - he.t_peak < self.cfg.COOLDOWN_SEC for he in self.event_history):
+                continue
+            final_events.append(event)
+
+        self.event_history.extend(final_events)
+        self.event_history = self.event_history[-50:]
+
+        return sorted(final_events, key=lambda e: e.t_peak)
+
+    def pick_word(self, event: Event) -> str:
+        """Selects an appropriate onomatopoeia based on event characteristics."""
+        features = event.features
+        is_underwater = "underwater" in event.context
+        
+        # Determine sound character from features
+        is_sharp = features.get("high_freq_ratio", 0) > 0.35
+        is_deep = features.get("low_freq_ratio", 0) > 0.45
+        has_flash = "visual_flash" in features
+        
+        word = "BUMP" # Default
+        if has_flash and is_sharp:
+            word = "BLAM" if event.intensity > 0.6 else "ZAP"
+        elif is_sharp and not is_deep:
+            word = "CRACK" if event.intensity > 0.7 else "CLICK"
+        elif is_deep and not is_sharp:
+            word = "BOOM" if event.intensity > 0.8 else "THUD"
+        elif is_sharp and is_deep: # broadband sound
+             word = "CRASH" if event.intensity > 0.7 else "BANG"
+        else: # mid-range
+            word = "WHACK"
+
+        # Apply context modifiers
+        if is_underwater:
+            word = {"CRACK": "BLIP", "CLICK": "plink", "BOOM": "THOOM", "THUD": "THUMP", "CRASH": "SPLOOSH", "BANG": "GLUG", "WHACK": "SWISH", "BLAM": "BWUMP"}.get(word, "BLUB")
+
+        # Apply intensity modifiers
+        if event.intensity > 0.85 and len(word) > 2:
+            # Lengthen vowel for intense sounds
+            for vowel in "AEIOU":
+                if vowel in word:
+                    word = word.replace(vowel, vowel * 2, 1)
+                    break
+            word += "!"
+        
+        return word.upper()
+
+def sliding_windows(total_dur: float, win: float = 1.0, hop: float = 0.5):
+    """Convenience generator for sliding windows."""
     t = 0.0
     while t < total_dur:
-        yield t, min(t+win, total_dur)
+        yield t, min(t + win, total_dur)
         t += hop
-
-"""
-Integration sketch (in your pipeline):
-
-from multimodal_events import MultimodalOnomatopoeia, Config
-
-engine = MultimodalOnomatopoeia(cfg=Config())
-
-# Suppose you already have mono audio `y`, sample rate `sr`, and a frame buffer with timestamps.
-# Provide helpers to slice the right segment for each window.
-
-for t0, t1 in sliding_windows(total_dur=len(y)/sr):
-    a0, a1 = int(t0*sr), int(t1*sr)
-    audio_chunk = y[a0:a1]
-    # Collect frames whose timestamps lie in [t0, t1]
-    frames = [F for (F, Ft) in frame_buffer if t0 <= Ft <= t1]
-    ftimes = [Ft - t0 for (F, Ft) in frame_buffer if t0 <= Ft <= t1]
-    events = engine.process_window(audio_chunk, sr, frames, ftimes, t0, t1)
-    for e in events:
-        word = engine.pick_word(e)
-        # hand off to your subtitle/animation layer
-"""

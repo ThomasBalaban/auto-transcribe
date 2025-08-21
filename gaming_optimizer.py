@@ -43,49 +43,35 @@ class GamingOptimizer:
         return final_effects
 
     def _remove_similar_effects(self, effects: List[Dict]) -> List[Dict]:
-        """Remove effects that are too similar in sound and timing."""
+        """
+        Removes repetitive and similar effects with context awareness.
+        """
         if not effects:
             return effects
-            
+
         filtered_effects = []
-        
-        for current_effect in effects:
-            is_duplicate = False
-            current_word = current_effect.get('word', '').upper()
-            current_time = current_effect['start_time']
+        last_context_time = {}
+        repetitive_contexts = ["ladder", "climbing", "footsteps", "walking"]
+
+        for effect in effects:
+            word = effect.get('word', '').upper()
+            context = effect.get('context', '').lower()
+            time = effect['start_time']
             
-            # Check against recently added effects
-            for existing_effect in filtered_effects[-5:]:  # Only check last 5 effects
-                existing_word = existing_effect.get('word', '').upper()
-                existing_time = existing_effect['start_time']
-                time_diff = abs(current_time - existing_time)
-                
-                # Calculate text similarity
-                similarity = difflib.SequenceMatcher(None, current_word, existing_word).ratio()
-                
-                # Check for repetitive sounds (like ladder climbing)
-                is_repetitive_context = any(keyword in current_effect.get('context', '').lower() 
-                                          for keyword in ['ladder', 'climb', 'step', 'walk', 'footstep'])
-                
-                # More aggressive filtering for repetitive sounds
-                if is_repetitive_context and time_diff < self.repetitive_sound_cooldown:
-                    if similarity > 0.5 or any(word in current_word for word in ['CLANK', 'STEP', 'THUD']):
-                        self.log_func(f"🔇 Filtered repetitive sound: '{current_word}' at {current_time:.2f}s "
-                                    f"(similar to '{existing_word}' at {existing_time:.2f}s)")
-                        is_duplicate = True
+            is_repetitive = False
+            for rep_ctx in repetitive_contexts:
+                if rep_ctx in context:
+                    if time - last_context_time.get(rep_ctx, -999) < 10.0: # 10-second window
+                        self.log_func(f"-> FILTER (Repetitive): '{word}' due to recent '{rep_ctx}' context.")
+                        is_repetitive = True
                         break
-                
-                # Normal similarity check
-                elif similarity > self.similarity_threshold and time_diff < self.min_effect_spacing:
-                    self.log_func(f"🔇 Filtered similar effect: '{current_word}' at {current_time:.2f}s "
-                                f"(similarity: {similarity:.2f} to '{existing_word}')")
-                    is_duplicate = True
-                    break
-            
-            if not is_duplicate:
-                filtered_effects.append(current_effect)
-        
-        self.log_func(f"📊 Similarity filtering: {len(effects)} → {len(filtered_effects)} effects")
+                    else:
+                        last_context_time[rep_ctx] = time
+
+            if not is_repetitive:
+                filtered_effects.append(effect)
+
+        self.log_func(f"Context-aware filtering complete: {len(effects)} -> {len(filtered_effects)} effects")
         return filtered_effects
 
     def _manage_effect_density(self, effects: List[Dict]) -> List[Dict]:

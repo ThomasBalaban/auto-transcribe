@@ -25,7 +25,7 @@ class GamingOnsetDetector:
         self.medium_min_spacing = 0.2   # Reduced from 0.25
         self.quick_min_spacing = 0.08   # Reduced from 0.12
         
-        self.log_func(f"🎯 Enhanced gaming onset detector initialized:")
+        self.log_func(f"識 Enhanced gaming onset detector initialized:")
         self.log_func(f"   - Sensitivity: {sensitivity} (lower = more sensitive)")
         self.log_func(f"   - Min energy threshold: {self.min_energy_threshold}")
         self.log_func(f"   - Major threshold: {self.major_onset_threshold}")
@@ -282,16 +282,26 @@ class GamingOnsetDetector:
         except Exception:
             return "GENERAL"
 
-    def detect_gaming_onsets(self, audio_path: str) -> List[Dict]:
-        """Enhanced main onset detection pipeline."""
+    def detect_gaming_onsets(self, audio_path: str, video_context: List[str] = None) -> List[Dict]:
+        """
+        Enhanced main onset detection pipeline with video context.
+        """
         try:
-            self.log_func(f"\n🚀 Enhanced gaming onset detection: {os.path.basename(audio_path)}")
+            self.log_func(f"\n噫 Enhanced gaming onset detection: {os.path.basename(audio_path)}")
             audio, sr = librosa.load(audio_path, sr=self.sample_rate)
-            self.log_func(f"📊 Audio loaded: {len(audio)/sr:.2f}s at {sr}Hz")
+            self.log_func(f"投 Audio loaded: {len(audio)/sr:.2f}s at {sr}Hz")
             
             # Pre-process audio for better detection
             audio = self._preprocess_audio(audio, sr)
             
+            # (Add a check for violence keywords in video_context)
+            is_violent_scene = any(kw in video_context for kw in ["kick", "punch", "shot"]) if video_context else False
+
+            # Dynamically lower the onset threshold if violence is detected
+            if is_violent_scene:
+                self.major_onset_threshold *= 0.8 # 20% more sensitive
+                self.log_func("Violence detected in video context; lowering onset thresholds.")
+
             onset_tiers = self.detect_multi_tier_onsets(audio, sr)
             merged_onsets = self.merge_onset_tiers(
                 onset_tiers['major'], 
@@ -299,7 +309,7 @@ class GamingOnsetDetector:
                 onset_tiers['quick']
             )
             
-            self.log_func(f"🎤 Found {len(merged_onsets)} potential onsets before energy filtering.")
+            self.log_func(f"痔 Found {len(merged_onsets)} potential onsets before energy filtering.")
             
             events = []
             for onset_event in merged_onsets:
@@ -335,11 +345,11 @@ class GamingOnsetDetector:
             # Post-processing: remove very close duplicates
             events = self._remove_close_duplicates(events)
             
-            self.log_func(f"🎉 Enhanced gaming onset detection complete: {len(events)} events passed all filters.")
+            self.log_func(f"脂 Enhanced gaming onset detection complete: {len(events)} events passed all filters.")
             return events
             
         except Exception as e:
-            self.log_func(f"💥 Enhanced gaming onset detection failed: {e}")
+            self.log_func(f"徴 Enhanced gaming onset detection failed: {e}")
             import traceback
             self.log_func(traceback.format_exc())
             return []
