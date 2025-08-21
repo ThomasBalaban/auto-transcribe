@@ -45,6 +45,7 @@ class OnomatopoeiaDetector:
             self.log_func(f"FATAL: Failed to initialize core components: {e}")
             raise
 
+    # thomasbalaban/auto-transcribe/auto-transcribe-a9418468ebe23525765235dcec50cbda39456203/onomatopoeia_detector.py
     def _filter_events_with_cooldown(self, events: List[Dict], cooldown_period: float = 2.0) -> List[Dict]:
         """
         Filters events using an impact-aware cooldown. A sharper, more impactful event

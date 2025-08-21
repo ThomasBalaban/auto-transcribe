@@ -98,10 +98,8 @@ class MultimodalFusionEngine:
     def _create_final_effect(self, decision: Dict, audio_event: Dict) -> Dict:
         """Creates the final event object with timing centered around the audio peak."""
         duration = random.uniform(0.7, 1.2)
-        peak_time = audio_event['peak_time']
-        
-        start_time = peak_time - (duration / 2)
-        end_time = peak_time + (duration / 2)
+        start_time = audio_event['time']
+        end_time = start_time + duration
         
         return {
             'word': decision['text'],
