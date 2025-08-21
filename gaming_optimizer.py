@@ -52,12 +52,21 @@ class GamingOptimizer:
         filtered_effects = []
         last_context_time = {}
         repetitive_contexts = ["ladder", "climbing", "footsteps", "walking"]
+        last_effect = None
 
         for effect in effects:
             word = effect.get('word', '').upper()
             context = effect.get('context', '').lower()
             time = effect['start_time']
-            
+
+            # Check for similar context with the last accepted effect
+            if last_effect:
+                last_context = last_effect.get('context', '').lower()
+                similarity_ratio = difflib.SequenceMatcher(None, context, last_context).ratio()
+                if similarity_ratio > self.similarity_threshold:
+                    self.log_func(f"-> FILTER (Similar Context): '{word}' at {time:.2f}s due to similar context with previous effect.")
+                    continue
+
             is_repetitive = False
             for rep_ctx in repetitive_contexts:
                 if rep_ctx in context:
@@ -70,6 +79,7 @@ class GamingOptimizer:
 
             if not is_repetitive:
                 filtered_effects.append(effect)
+                last_effect = effect
 
         self.log_func(f"Context-aware filtering complete: {len(effects)} -> {len(filtered_effects)} effects")
         return filtered_effects

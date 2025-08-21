@@ -1,7 +1,7 @@
 # onset_detector.py - CLEAN ENHANCED VERSION
 
 import numpy as np
-import librosa
+import librosa # type: ignore
 from typing import List, Dict
 import os
 from scipy import signal
