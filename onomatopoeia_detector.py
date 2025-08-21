@@ -5,11 +5,8 @@ from typing import List, Dict, Tuple
 
 # Import all the necessary components from your project
 from onset_detector import GamingOnsetDetector
-# === CHANGE HERE: Import the new VisionLLMAnalyzer ===
-from vision_llm_analyzer import VisionLLMAnalyzer 
+from gemini_vision_analyzer import GeminiVisionAnalyzer 
 from multimodal_fusion import MultimodalFusionEngine
-# === CHANGE HERE: AudioEnhancer is no longer needed ===
-# from audio_enhancement import AudioEnhancer 
 from gaming_optimizer import GamingOptimizer
 from subtitle_generator import SubtitleGenerator
 from file_processor import FileProcessor
@@ -18,31 +15,28 @@ from file_processor import FileProcessor
 class OnomatopoeiaDetector:
     """
     Main onomatopoeia detection system that orchestrates the complete
-    multimodal detection pipeline for superior accuracy and context-awareness.
+    multimodal detection pipeline using the Gemini API for superior accuracy.
     """
 
-    def __init__(self, sensitivity: float = 0.5, device: str = "mps", log_func=None):
+    def __init__(self, sensitivity: float = 0.5, device: str = "cpu", log_func=None):
         """Initialize the full detection system."""
         self.sensitivity = sensitivity
         self.device = device
         self.log_func = log_func or print
 
-        self.log_func("🚀 Initializing Multimodal Onomatopoeia Detector...")
+        self.log_func("🚀 Initializing Multimodal Onomatopoeia Detector with Gemini...")
         self._initialize_components()
-        self.log_func("✅ Multimodal system ready!")
+        self.log_func("✅ Gemini-powered multimodal system ready!")
 
     def _initialize_components(self):
-        """Initialize all detection components from your project."""
+        """Initialize all detection components for the Gemini pipeline."""
         try:
             self.log_func("Loading core detection systems...")
             self.onset_detector = GamingOnsetDetector(sensitivity=self.sensitivity, log_func=self.log_func)
-            # === CHANGE HERE: Use the new VisionLLMAnalyzer ===
-            self.video_analyzer = VisionLLMAnalyzer(log_func=self.log_func)
+            self.video_analyzer = GeminiVisionAnalyzer(log_func=self.log_func) 
             self.fusion_engine = MultimodalFusionEngine(log_func=self.log_func)
 
-            self.log_func("Loading processing and enhancement modules...")
-            # === CHANGE HERE: Remove the old AudioEnhancer ===
-            # self.audio_enhancer = AudioEnhancer(log_func=self.log_func)
+            self.log_func("Loading processing and utility modules...")
             self.gaming_optimizer = GamingOptimizer(log_func=self.log_func)
             self.subtitle_generator = SubtitleGenerator(log_func=self.log_func)
             self.file_processor = FileProcessor(log_func=self.log_func)
@@ -50,6 +44,45 @@ class OnomatopoeiaDetector:
         except Exception as e:
             self.log_func(f"FATAL: Failed to initialize core components: {e}")
             raise
+
+    def _filter_events_with_cooldown(self, events: List[Dict], cooldown_period: float = 2.0) -> List[Dict]:
+        """
+        Filters events using an impact-aware cooldown. A sharper, more impactful event
+        can override a less impactful one within the cooldown period.
+        """
+        if not events:
+            return []
+
+        self.log_func(f"⚡ Applying smart action cooldown filter with a {cooldown_period}s window...")
+        
+        for event in events:
+            event['impact_score'] = event['energy'] + (event.get('spectral_flux', 0) * 0.5)
+
+        events.sort(key=lambda x: x['time'])
+        
+        significant_events = []
+        
+        i = 0
+        while i < len(events):
+            current_event = events[i]
+            
+            best_event_in_window = current_event
+            window_end_time = current_event['time'] + cooldown_period
+            
+            j = i + 1
+            while j < len(events) and events[j]['time'] < window_end_time:
+                if events[j]['impact_score'] > best_event_in_window['impact_score']:
+                    self.log_func(f"  -> Override: Event at {events[j]['time']:.2f}s (Impact: {events[j]['impact_score']:.2f}) is more impactful than event at {best_event_in_window['time']:.2f}s (Impact: {best_event_in_window['impact_score']:.2f}).")
+                    best_event_in_window = events[j]
+                j += 1
+            
+            significant_events.append(best_event_in_window)
+            self.log_func(f"  -> Keeping best event in window: {best_event_in_window['time']:.2f}s (Impact: {best_event_in_window['impact_score']:.2f})")
+            
+            i = j
+
+        self.log_func(f"⚡ Smart cooldown complete. Kept {len(significant_events)} of {len(events)} events.")
+        return significant_events
 
     def analyze_file(self, input_path: str) -> List[Dict]:
         """
@@ -68,47 +101,45 @@ class OnomatopoeiaDetector:
 
     def _analyze_video_file(self, video_path: str) -> List[Dict]:
         """
-        Executes the full multimodal analysis pipeline for video files. This is
-        the core of the new system.
+        Executes the full multimodal analysis pipeline for video files using Gemini.
         """
         audio_path = None
         try:
             self.log_func(f"\n{'='*60}")
-            self.log_func(f"STARTING MULTIMODAL ANALYSIS: {os.path.basename(video_path)}")
+            self.log_func(f"STARTING GEMINI MULTIMODAL ANALYSIS: {os.path.basename(video_path)}")
             self.log_func(f"{'='*60}")
 
-            audio_path = self.file_processor.extract_audio_from_video(video_path)
+            audio_path = self.file_processor.extract_audio_from_video(video_path, track_index="a:1")
 
             self.log_func(f"\n📊 PHASE 1: Detecting Precise Audio Onsets")
             audio_events = self.onset_detector.detect_gaming_onsets(audio_path)
-            if not audio_events:
-                self.log_func("No significant audio events detected. Stopping analysis.")
-                return []
-            self.log_func(f"✅ Detected {len(audio_events)} potential audio onset events.")
-
-            self.log_func(f"\n🎬 PHASE 2: Analyzing Video Context at Onset Timestamps")
-            onset_timestamps = [event['time'] for event in audio_events]
-            video_analyses = self.video_analyzer.analyze_video_at_timestamps(
-                video_path, onset_timestamps, window_duration=3.0
-            )
-            self.log_func(f"✅ Completed video analysis for {len(video_analyses)} timestamps.")
             
-            # === CHANGE HERE: This entire phase is removed ===
-            # self.log_func(f"\n🎧 PHASE 3: Enhancing Audio Events with CLAP Model")
-            # enhanced_audio_events = self.audio_enhancer.enhance_audio_events(audio_events, audio_path)
-            # self.log_func(f"✅ Enhanced {len(enhanced_audio_events)} audio events with descriptions.")
+            significant_events = self._filter_events_with_cooldown(audio_events)
 
-            self.log_func(f"\n🔄 PHASE 3: Fusing Audio and Video Intelligence") # Renumbered
+            if not significant_events:
+                self.log_func("No significant audio events detected after cooldown. Stopping analysis.")
+                return []
+            self.log_func(f"✅ Detected {len(significant_events)} significant audio events post-cooldown.")
+
+            self.log_func(f"\n🎬 PHASE 2: Analyzing Video Context with Gemini Pro Vision")
+            
+            # === UPDATED METHOD CALL: Pass the full event objects to get a linked analysis map ===
+            video_analyses_map = self.video_analyzer.analyze_video_at_timestamps(
+                video_path, significant_events, window_duration=5.0
+            )
+            self.log_func(f"✅ Completed Gemini video analysis for {len(video_analyses_map)} timestamps.")
+            
+            self.log_func(f"\n🔄 PHASE 3: Fusing Audio/Video Intelligence & Generating with Local LLM")
             final_effects = self.fusion_engine.process_multimodal_events(
-                audio_events, video_analyses # Use raw audio_events
+                significant_events, video_analyses_map
             )
             self.log_func(f"✅ Fusion complete. Generated {len(final_effects)} initial onomatopoeia effects.")
 
-            self.log_func(f"\n🎮 PHASE 4: Applying Gaming Content Optimizations") # Renumbered
+            self.log_func(f"\n🎮 PHASE 4: Applying Gaming Content Optimizations")
             optimized_effects = self.gaming_optimizer.apply_gaming_optimizations(final_effects)
             self.log_func(f"✅ Optimization complete. Final effect count: {len(optimized_effects)}.")
 
-            self.log_func(f"\n🎉 MULTIMODAL ANALYSIS COMPLETE!")
+            self.log_func(f"\n🎉 GEMINI MULTIMODAL ANALYSIS COMPLETE!")
             return optimized_effects
 
         except Exception as e:
@@ -120,7 +151,6 @@ class OnomatopoeiaDetector:
             if audio_path:
                 self.file_processor.cleanup_temp_file(audio_path)
 
-    # ... (the rest of the file remains the same)
     def _analyze_audio_file(self, audio_path: str) -> List[Dict]:
         """Runs a simplified, audio-only version of the pipeline."""
         try:
@@ -128,13 +158,13 @@ class OnomatopoeiaDetector:
             self.log_func(f"STARTING AUDIO-ONLY ANALYSIS: {os.path.basename(audio_path)}")
             self.log_func(f"{'='*60}")
 
-            # Run audio-focused phases
             audio_events = self.onset_detector.detect_gaming_onsets(audio_path)
-            if not audio_events:
+            significant_events = self._filter_events_with_cooldown(audio_events)
+            
+            if not significant_events:
                 return []
             
-            # The fusion engine will intelligently handle the lack of video data
-            final_effects = self.fusion_engine.process_multimodal_events(audio_events, [])
+            final_effects = self.fusion_engine.process_multimodal_events(significant_events, {})
             optimized_effects = self.gaming_optimizer.apply_gaming_optimizations(final_effects)
 
             self.log_func(f"\n🎉 AUDIO-ONLY ANALYSIS COMPLETE! Found {len(optimized_effects)} effects.")

@@ -18,6 +18,7 @@ accelerate
 librosa
 opencv-python
 pillow
+google-generativeai
 
 # Additional AI Dependencies
 datasets

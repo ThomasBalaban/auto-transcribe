@@ -6,3 +6,4 @@ venv/
 *.log
 local_modals/*
 output/*
+config.json

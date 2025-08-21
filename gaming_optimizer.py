@@ -8,8 +8,9 @@ class GamingOptimizer:
     recalibrated, more forgiving settings.
     """
 
-    def __init__(self, max_effects_per_minute: int = 15, min_effect_spacing: float = 0.6, log_func=None):
-        # Increased max effects and reduced spacing to allow for more action
+    def __init__(self, max_effects_per_minute: int = 12, min_effect_spacing: float = 1.0, log_func=None):
+        # === CHANGE: Tuned settings to reduce "spam" ===
+        # Reduced max effects and increased spacing to prevent overwhelming the viewer.
         self.max_effects_per_minute = max_effects_per_minute
         self.min_effect_spacing = min_effect_spacing
         self.log_func = log_func or print
@@ -44,6 +45,7 @@ class GamingOptimizer:
         filtered_effects = []
         for bucket_key in sorted(buckets.keys()):
             bucket_effects = buckets[bucket_key]
+            # Sort by confidence to keep the most relevant effects
             bucket_effects.sort(key=lambda x: x.get('confidence', 0), reverse=True)
             filtered_effects.extend(bucket_effects[:self.max_effects_per_minute])
 
