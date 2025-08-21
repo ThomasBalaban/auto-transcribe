@@ -5,7 +5,7 @@ Handles connection to Ollama API and text generation for sound effects.
 
 import requests
 import json
-from typing import Optional
+from typing import Optional, Set
 
 
 class OllamaLLM:
@@ -13,7 +13,7 @@ class OllamaLLM:
     Ollama integration for onomatopoeia generation using mistral-nemo.
     """
     
-    def __init__(self, model_name="mistral-nemo:latest", base_url="http://localhost:11434", log_func=None):
+    def __init__(self, model_name="llama3:70b", base_url="http://localhost:11434", log_func=None):
         self.model_name = model_name
         self.base_url = base_url
         self.log_func = log_func or print
@@ -45,32 +45,47 @@ class OllamaLLM:
             self.log_func("💡 Make sure Ollama is running: ollama serve")
             return False
     
-    def generate_onomatopoeia(self, description: str) -> Optional[str]:
+    def generate_onomatopoeia(self, video_caption: str, audio_context: str, scene_context: Set[str]) -> Optional[str]:
         """Generate onomatopoeia using Ollama with improved prompting."""
         if not self.available:
             return None
             
         try:
-            prompt = f"""Convert this audio description into ONE comic book sound effect word.
+            # Build the context string
+            full_context = f"**Audio Context:** {audio_context}\n"
+            full_context += f"**Video Caption:** \"{video_caption}\"\n"
+            if scene_context:
+                full_context += f"**Scene Environment:** {', '.join(scene_context)}"
 
-Audio description: "{description}"
+            prompt = f"""You are a master comic book artist. Create the perfect onomatopoeia based on the following context.
 
-Rules:
-- Give me ONLY the sound effect word (like BANG, CRASH, SPLASH)
-- Use ALL CAPS
-- Keep it short (1-2 words max)
-- Make it punchy and comic book style
-- Don't explain, just give the word
+**CONTEXT:**
+{full_context}
 
-Sound effect:"""
+**INSTRUCTIONS:**
+1.  **Analyze the Scene:** How does the environment (e.g., underwater) change the sound?
+2.  **Determine the Action:** What is the primary action causing the sound?
+3.  **Listen to the Audio:** Is the sound sharp, dull, deep, or metallic?
+4.  **Create the Word:** Generate a single, powerful onomatopoeia in ALL CAPS.
+5.  **Output ONLY the word.**
+
+**Example:**
+-   *CONTEXT:* Audio: Sharp, high-frequency. Video: "a soldier fires a rifle". Scene: underwater.
+-   *Onomatopoeia:* **BLUB!**
+
+---
+
+**CONTEXT:**
+{full_context}
+**Onomatopoeia:**"""
 
             payload = {
                 "model": self.model_name,
                 "prompt": prompt,
                 "stream": False,
                 "options": {
-                    "temperature": 0.3,
-                    "top_p": 0.9,
+                    "temperature": 0.2,
+                    "top_p": 0.8,
                     "max_tokens": 10,
                     "stop": ["\n", ".", "!", "?"]
                 }
@@ -79,7 +94,7 @@ Sound effect:"""
             response = requests.post(
                 f"{self.base_url}/api/generate",
                 json=payload,
-                timeout=10
+                timeout=60
             )
             
             if response.status_code == 200:
@@ -88,7 +103,7 @@ Sound effect:"""
                 cleaned = self._clean_ollama_output(raw_output)
                 
                 if cleaned:
-                    self.log_func(f"✨ Ollama generated: '{cleaned}'")
+                    self.log_func(f"✨ Ollama generated: '{cleaned}' from context: {full_context}")
                     return cleaned
                     
             return None
@@ -113,14 +128,14 @@ Sound effect:"""
         
         # Remove punctuation but keep hyphens for compound words
         import re
-        text = re.sub(r'[^\w\s\-]', '', text)
+        text = re.sub(r'[^\w\s\-!]', '', text)
         
         # Split into words
         words = text.split()
         
         # Filter out unwanted words
         unwanted = {'THE', 'A', 'AN', 'OF', 'IN', 'ON', 'AT', 'IS', 'ARE', 'WAS', 'WERE', 
-                   'SOUND', 'EFFECT', 'NOISE', 'AUDIO'}
+                   'SOUND', 'EFFECT', 'NOISE', 'AUDIO', 'ONOMATOPOEIA:'}
         
         # Find the best word(s)
         good_words = []
@@ -129,7 +144,7 @@ Sound effect:"""
             if (len(word) >= 2 and 
                 word not in unwanted and 
                 not word.startswith('SOUND') and
-                word.isalpha() or '-' in word):
+                (word.isalpha() or '-' in word or '!' in word)):
                 good_words.append(word)
         
         if good_words:
