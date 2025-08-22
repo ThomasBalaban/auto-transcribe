@@ -9,6 +9,7 @@ import threading
 import queue
 import customtkinter as ctk # type: ignore
 import traceback
+import json
 from tkinter import filedialog, messagebox
 from multimodal_events import MultimodalOnomatopoeia, Config, sliding_windows
 
@@ -39,26 +40,74 @@ class DualSubtitleApp:
         # Start log message processing
         self.root.after(100, self.process_log_messages)
 
+        # Load window geometry
+        self.load_window_geometry()
+
+        # Set the protocol for closing the window
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def save_window_geometry(self):
+        """Saves the current window geometry to a file."""
+        try:
+            geometry = self.root.geometry()
+            with open("window_geometry.json", "w") as f:
+                json.dump({"geometry": geometry}, f)
+        except Exception as e:
+            self.log(f"Error saving window geometry: {e}")
+
+    def load_window_geometry(self):
+        """Loads the window geometry from a file and applies it."""
+        try:
+            if os.path.exists("window_geometry.json"):
+                with open("window_geometry.json", "r") as f:
+                    config = json.load(f)
+                    geometry = config.get("geometry")
+                    if geometry:
+                        self.root.geometry(geometry)
+        except Exception as e:
+            # If there's an error (e.g., corrupted file), start with default geometry
+            self.log(f"Error loading window geometry: {e}. Using default.")
+            self.root.geometry("700x750")
+
+    def on_closing(self):
+        """Handles the window closing event."""
+        self.save_window_geometry()
+        self.root.destroy()
+
     def setup_ui(self):
-        """Create and arrange all UI elements using the UI components module."""
+        """Create and arrange all UI elements using the UI components module with a stable grid layout."""
         # Create main layout
         frame = UISetup.create_main_layout(self.root)
         
-        # Create sections
-        self.files_textbox = UISetup.create_file_list_section(frame, self)
-        self.output_dir_entry = UISetup.create_output_directory_section(frame, self)
+        # Configure the grid layout for the main frame
+        frame.grid_columnconfigure(0, weight=1)
+        # Make the row for the log box expand vertically
+        frame.grid_rowconfigure(5, weight=1)
+
+        # Create and place sections using the grid
+        # Row 0: File List
+        files_frame, self.files_textbox = UISetup.create_file_list_section(frame, self)
+        files_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
         
-        # Create onomatopoeia section
-        self.animation_var = UISetup.create_onomatopoeia_section(frame, self)
+        # Row 1: Output Directory
+        output_frame, self.output_dir_entry = UISetup.create_output_directory_section(frame, self)
+        output_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
         
-        self.progress_label, self.progress_bar = UISetup.create_progress_section(frame)
+        # Row 2: Onomatopoeia Settings
+        onomatopoeia_frame, self.animation_var = UISetup.create_onomatopoeia_section(frame, self)
+        onomatopoeia_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
         
-        # Process button
+        # Row 3: Progress Section
+        progress_frame, self.progress_label, self.progress_bar = UISetup.create_progress_section(frame)
+        progress_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
+
+        # Row 4: Process Button
         self.process_button = UISetup.create_process_button(frame, self)
-        self.process_button.pack(pady=10)
+        self.process_button.grid(row=4, column=0, pady=10)
         
-        # Log area
-        self.log_box = UISetup.create_log_section(frame)
+        # Row 5: Log Area
+        log_frame, self.log_box = UISetup.create_log_section(frame)
+        log_frame.grid(row=5, column=0, sticky="nsew", padx=5, pady=5)
         
         # Hidden timecode variable (always enabled)
         self.timecodes_var = ctk.BooleanVar(value=True)
@@ -316,7 +365,6 @@ def main():
     
     root = ctk.CTk()
     root.title("SimpleAutoSubs - Multimodal Onomatopoeia Subtitler")
-    root.geometry("700x750")
     
     app = DualSubtitleApp(root)
     root.mainloop()

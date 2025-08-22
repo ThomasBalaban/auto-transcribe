@@ -26,9 +26,8 @@ class UISetup:
     
     @staticmethod
     def create_file_list_section(parent, app):
-        """Create the file list section with buttons."""
+        """Create the file list section. Returns the containing frame and the textbox widget."""
         files_frame = ctk.CTkFrame(parent)
-        files_frame.pack(fill="both", expand=True, padx=5, pady=5)
         
         ctk.CTkLabel(files_frame, text="Input Files:").pack(anchor="w", pady=5)
         
@@ -53,26 +52,24 @@ class UISetup:
             width=120
         ).pack(side="right", padx=5, pady=5)
         
-        return files_textbox
+        return files_frame, files_textbox
     
     @staticmethod
     def create_output_directory_section(parent, app):
-        """Create the output directory selection section."""
+        """Create the output directory selection section. Returns the containing frame and the entry widget."""
         output_frame = ctk.CTkFrame(parent)
-        output_frame.pack(fill="x", padx=5, pady=5)
         
         ctk.CTkLabel(output_frame, text="Output Directory:").pack(side="left", padx=5, pady=5)
         output_dir_entry = ctk.CTkEntry(output_frame, width=400)
         output_dir_entry.pack(side="left", padx=5, pady=5, fill="x", expand=True)
         ctk.CTkButton(output_frame, text="Browse", command=app.browse_output_dir).pack(side="left", padx=5, pady=5)
         
-        return output_dir_entry
+        return output_frame, output_dir_entry
     
     @staticmethod
     def create_onomatopoeia_section(parent, app):
-        """Create the onomatopoeia settings section."""
+        """Create the onomatopoeia settings section. Returns the containing frame and the variable."""
         onomatopoeia_frame = ctk.CTkFrame(parent)
-        onomatopoeia_frame.pack(fill="x", padx=5, pady=5)
         
         # Second row - animation type selection
         second_row = ctk.CTkFrame(onomatopoeia_frame)
@@ -102,13 +99,12 @@ class UISetup:
             width=150
         ).pack(side="left", padx=5, pady=5)
         
-        return animation_var
+        return onomatopoeia_frame, animation_var
 
     @staticmethod
     def create_progress_section(parent):
-        """Create the progress indicator section."""
+        """Create the progress indicator section. Returns the containing frame and widgets."""
         progress_frame = ctk.CTkFrame(parent)
-        progress_frame.pack(fill="x", padx=5, pady=5)
         
         progress_label = ctk.CTkLabel(progress_frame, text="Ready")
         progress_label.pack(side="top", pady=2)
@@ -117,7 +113,7 @@ class UISetup:
         progress_bar.pack(side="top", pady=5, fill="x")
         progress_bar.set(0)
         
-        return progress_label, progress_bar
+        return progress_frame, progress_label, progress_bar
     
     @staticmethod
     def create_process_button(parent, app):
@@ -132,11 +128,12 @@ class UISetup:
     
     @staticmethod
     def create_log_section(parent):
-        """Create the log area."""
-        ctk.CTkLabel(parent, text="Processing Log:").pack(anchor="w", pady=(10, 0))
-        log_box = ctk.CTkTextbox(parent, height=450, width=600)
+        """Create the log area. Returns the containing frame and the textbox widget."""
+        log_frame = ctk.CTkFrame(parent)
+        ctk.CTkLabel(log_frame, text="Processing Log:").pack(anchor="w", pady=(10, 0))
+        log_box = ctk.CTkTextbox(log_frame, height=450, width=600)
         log_box.pack(fill="both", expand=True, padx=5, pady=5)
-        return log_box
+        return log_frame, log_box
 
 
 class TestDialogs:
