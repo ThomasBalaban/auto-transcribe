@@ -12,9 +12,6 @@ class VideoProcessor:
     def process_single_video(
         input_file: str,
         output_file: str,
-        model_name: str,       # Kept for compatibility with UI
-        device_name: str,
-        ai_sensitivity: float,
         animation_type: str,
         log
     ):
@@ -22,17 +19,18 @@ class VideoProcessor:
         This function is called by the UI. It now initializes and runs the
         complete multimodal onomatopoeia detection pipeline.
         """
+        subtitle_path = None
         try:
             log("="*60)
             log(f"INITIALIZING VIDEO PROCESSOR FOR: {os.path.basename(input_file)}")
-            log(f"Animation: {animation_type}, AI Sensitivity: {ai_sensitivity}")
+            log(f"Animation: {animation_type}")
             log("="*60)
 
             # 1. Initialize our powerful detector with settings from the UI
             log("Initializing the multimodal onomatopoeia detector...")
             detector = OnomatopoeiaDetector(
-                sensitivity=ai_sensitivity,
-                device=device_name,
+                sensitivity=0.5, # Hardcoded sensitivity
+                device="cpu",    # Hardcoded device
                 log_func=log
             )
 
@@ -87,3 +85,10 @@ class VideoProcessor:
             import traceback
             log(f"Traceback: {traceback.format_exc()}")
             shutil.copy2(input_file, output_file)
+        finally:
+            if subtitle_path and os.path.exists(subtitle_path):
+                try:
+                    os.remove(subtitle_path)
+                    log(f"🗑️ Cleaned up subtitle file: {subtitle_path}")
+                except Exception as e:
+                    log(f"Warning: Could not clean up subtitle file {subtitle_path}: {e}")

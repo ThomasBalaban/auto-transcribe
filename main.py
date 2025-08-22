@@ -47,10 +47,9 @@ class DualSubtitleApp:
         # Create sections
         self.files_textbox = UISetup.create_file_list_section(frame, self)
         self.output_dir_entry = UISetup.create_output_directory_section(frame, self)
-        self.model_var, self.device_var = UISetup.create_model_settings_section(frame, self)
         
         # Create onomatopoeia section
-        self.confidence_var, self.animation_var = UISetup.create_onomatopoeia_section(frame, self)
+        self.animation_var = UISetup.create_onomatopoeia_section(frame, self)
         
         self.progress_label, self.progress_bar = UISetup.create_progress_section(frame)
         
@@ -235,10 +234,8 @@ class DualSubtitleApp:
             
             # Log settings
             animation_type = self.animation_var.get()
-            ai_sensitivity = float(self.confidence_var.get())
             self.log(f"Multimodal Detection Settings:")
             self.log(f"  Animation Type: {animation_type}")
-            self.log(f"  AI Sensitivity: {ai_sensitivity}")
             
             for i, (input_file, output_file) in enumerate(zip(self.input_files, self.output_files)):
                 self.current_process_index = i
@@ -261,9 +258,6 @@ class DualSubtitleApp:
                 VideoProcessor.process_single_video(
                     input_file, 
                     output_file, 
-                    self.model_var.get(),
-                    self.device_var.get(),
-                    ai_sensitivity,
                     animation_type,
                     self.log
                 )

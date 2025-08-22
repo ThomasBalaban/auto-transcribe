@@ -46,6 +46,13 @@ class UISetup:
         ctk.CTkButton(button_frame, text="Remove Last", command=app.remove_selected_file).pack(side="left", padx=5, pady=5)
         ctk.CTkButton(button_frame, text="Clear All", command=app.clear_all_files).pack(side="left", padx=5, pady=5)
         
+        ctk.CTkButton(
+            button_frame,
+            text="System Status",
+            command=app.check_system_status,
+            width=120
+        ).pack(side="right", padx=5, pady=5)
+        
         return files_textbox
     
     @staticmethod
@@ -62,56 +69,10 @@ class UISetup:
         return output_dir_entry
     
     @staticmethod
-    def create_model_settings_section(parent, app):
-        """Create the model and device selection section."""
-        model_frame = ctk.CTkFrame(parent)
-        model_frame.pack(fill="x", padx=5, pady=5)
-        
-        # Model selection
-        ctk.CTkLabel(model_frame, text="Whisper Model:").pack(side="left", padx=5, pady=5)
-        model_var = ctk.StringVar(value="large")
-        ctk.CTkOptionMenu(
-            model_frame,
-            values=["tiny", "base", "small", "medium", "large"],
-            variable=model_var
-        ).pack(side="left", padx=5, pady=5)
-        
-        # Device selection
-        ctk.CTkLabel(model_frame, text="Device:").pack(side="left", padx=20, pady=5)
-        device_var = ctk.StringVar(value="cpu")
-        ctk.CTkOptionMenu(
-            model_frame,
-            values=["cpu", "cuda"],
-            variable=device_var
-        ).pack(side="left", padx=5, pady=5)
-        
-        # System status button (simplified)
-        ctk.CTkButton(
-            model_frame,
-            text="System Status",
-            command=app.check_system_status,
-            width=120
-        ).pack(side="left", padx=(20, 5), pady=5)
-        
-        return model_var, device_var
-    
-    @staticmethod
     def create_onomatopoeia_section(parent, app):
         """Create the onomatopoeia settings section."""
         onomatopoeia_frame = ctk.CTkFrame(parent)
         onomatopoeia_frame.pack(fill="x", padx=5, pady=5)
-        
-        # First row - AI sensitivity
-        first_row = ctk.CTkFrame(onomatopoeia_frame)
-        first_row.pack(fill="x", padx=5, pady=5)
-        
-        ctk.CTkLabel(first_row, text="AI Sensitivity:").pack(side="left", padx=5, pady=5)
-        confidence_var = ctk.StringVar(value="0.5")  # Default to medium sensitivity
-        ctk.CTkOptionMenu(
-            first_row,
-            values=["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9"],
-            variable=confidence_var
-        ).pack(side="left", padx=5, pady=5)
         
         # Second row - animation type selection
         second_row = ctk.CTkFrame(onomatopoeia_frame)
@@ -141,7 +102,7 @@ class UISetup:
             width=150
         ).pack(side="left", padx=5, pady=5)
         
-        return confidence_var, animation_var
+        return animation_var
 
     @staticmethod
     def create_progress_section(parent):
