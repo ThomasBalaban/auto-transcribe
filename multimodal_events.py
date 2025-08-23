@@ -49,9 +49,9 @@ class Candidate:
 class Config:
     """General configuration for the multimodal engine."""
     # Time windows
-    VERIFY_WINDOW_SEC: float = 1.0  # How long to wait for a matching event from another modality
-    NMS_RADIUS_SEC: float = 0.4     # Non-maximum suppression window to avoid duplicate events
-    COOLDOWN_SEC: float = 0.5       # Cooldown period after a major event to reduce noise
+    VERIFY_WINDOW_SEC: float = 0.5  # How long to wait for a matching event from another modality
+    NMS_RADIUS_SEC: float = 0.3     # Non-maximum suppression window to avoid duplicate events
+    COOLDOWN_SEC: float = 0.4       # Cooldown period after a major event to reduce noise
 
     # Audio thresholds (adaptive)
     TRANSIENT_PROMINENCE_PERCENTILE: float = 92.0 # Detects sharp sounds relative to local audio
