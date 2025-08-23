@@ -3,6 +3,7 @@
 import os
 import shutil
 import tempfile
+import gc # Import the garbage collector module
 
 # Import the main onomatopoeia detector
 from onomatopoeia_detector import OnomatopoeiaDetector
@@ -49,6 +50,14 @@ class VideoProcessor:
             if not success:
                 log_func("WARNING: Onomatopoeia detection failed or produced no events.")
                 onomatopoeia_subtitle_path = None
+
+            # --- FIX: EXPLICITLY RELEASE RESOURCES ---
+            # Delete the detector object to free up memory (especially VRAM)
+            # before loading the large Whisper model.
+            log_func("INFO: Releasing onomatopoeia detector resources...")
+            del detector
+            gc.collect() # Force Python's garbage collector to run
+            log_func("INFO: Resources released.")
 
 
             # --- 2. DIALOGUE TRANSCRIPTION (ALWAYS ON) ---
