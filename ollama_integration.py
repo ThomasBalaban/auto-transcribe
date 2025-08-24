@@ -59,16 +59,19 @@ class OllamaLLM:
                 f"**Scene Environment:** {', '.join(scene_context) if scene_context else 'N/A'}"
             )
             prompt = (
-                "You are an expert comic book artist. Your task is to create the perfect onomatopoeia.\n\n"
-                "Here are examples of how to map context to a sound word:\n"
+                "You are an expert comic book artist. Your task is to create the perfect onomatopoeia based on very specific rules.\n\n"
+                "Here are examples of how to map context to a sound word. Be literal and descriptive.\n"
                 "- Context: Visual of a gunshot, audio is a sharp, high-frequency sound. -> Onomatopoeia: BLAM!\n"
                 "- Context: Visual of a character falling into water, audio is a low-frequency sound. -> Onomatopoeia: SPLOOSH!\n"
-                "Now, based on the following context, create the perfect onomatopoeia.\n\n"
+                "- Context: Visual of a small object hitting a metal surface. -> Onomatopoeia: CLANK!\n"
+                "- Context: Visual of something electrical. -> Onomatopoeia: ZAP!\n"
+                "- Context: Visual of a heavy object hitting the ground. -> Onomatopoeia: THUD!\n\n"
+                "**RULES:**\n"
+                "1.  **BE LITERAL:** The word must literally represent the sound. Avoid creative, abstract, or funny words. 'KERCHOW' is a bad example. 'CRASH' is a good example.\n"
+                "2.  **Analyze all context provided.**\n"
+                "3.  **Create a single, impactful word in ALL CAPS.**\n"
+                "4.  **Output ONLY the onomatopoeia word.**\n\n"
                 f"**CONTEXT:**\n{full_context}\n\n"
-                "**INSTRUCTIONS:**\n"
-                "1. Analyze all context provided.\n"
-                "2. Create a single, impactful word in ALL CAPS.\n"
-                "3. Output ONLY the onomatopoeia word.\n\n"
                 "**Onomatopoeia:**"
             )
             payload = { "model": self.model_name, "prompt": prompt, "stream": False }

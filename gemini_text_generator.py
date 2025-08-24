@@ -30,13 +30,14 @@ class GeminiTextGenerator:
         )
 
         prompt = (
-            "You are a master comic book artist. Create the perfect onomatopoeia based on the following context.\n\n"
+            "You are a master comic book artist. Create the perfect onomatopoeia based on the following context and strict rules.\n\n"
             "**CONTEXT:**\n"
             f"{full_context}\n\n"
-            "**INSTRUCTIONS:**\n"
-            "1. **Analyze the combined context.**\n"
-            "2. **Create a single, impactful onomatopoeia in ALL CAPS suitable for a comic book.**\n"
-            "3. **Output ONLY the word.**\n\n"
+            "**RULES & INSTRUCTIONS:**\n"
+            "1. **BE LITERAL AND AVOID CREATIVE WORDS.** The word must literally represent the sound. For example, for a water splash, use 'SPLASH' or 'SPLOOSH', not 'KERCHOW'.\n"
+            "2. **Analyze the combined context.**\n"
+            "3. **Create a single, impactful onomatopoeia in ALL CAPS suitable for a comic book.**\n"
+            "4. **Output ONLY the word.**\n\n"
             "**Onomatopoeia:**"
         )
 
