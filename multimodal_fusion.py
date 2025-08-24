@@ -1,3 +1,5 @@
+# multimodal_fusion.py
+
 """
 Improved version of the multimodal fusion engine.
 This version incorporates AI-driven animation selection and animation-specific
@@ -124,11 +126,19 @@ class MultimodalFusionEngine:
         return context
 
     def _fallback_audio_effect(self, audio_event: Dict) -> str:
-        # ... (This method remains unchanged)
         energy = audio_event.get('energy', 0.5)
-        if energy > 0.8: return random.choice(["KABOOM!", "CRACK!", "SLAM!"])
-        if energy > 0.4: return random.choice(["THUD", "CLICK", "THWACK"])
-        return random.choice(["thump", "tick", "tap"])
+        onset_type = audio_event.get('onset_type', 'GENERAL')
+
+        if onset_type == 'LOW_FREQ':
+            return "BOOM" if energy > 0.6 else "THUD"
+        elif onset_type == 'HIGH_FREQ':
+            return "CRACK" if energy > 0.6 else "CLICK"
+        elif onset_type == 'BROADBAND':
+            return "CRASH" if energy > 0.6 else "BUMP"
+        else: # GENERAL
+            if energy > 0.8: return random.choice(["KABOOM!", "CRACK!", "SLAM!"])
+            if energy > 0.4: return random.choice(["THUD", "CLICK", "THWACK"])
+            return random.choice(["thump", "tick", "tap"])
 
 
     def _create_final_effect(
