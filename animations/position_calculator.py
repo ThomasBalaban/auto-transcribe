@@ -27,7 +27,7 @@ class PositionCalculator:
             y = base_y - int(AnimationConstants.DRIFT_DISTANCE * ease_progress)
             alpha = int(255 * (1.0 - 0.8 * progress))
             font_size = None
-            rotation = 0  # FIX: Added missing rotation value
+            rotation = 0
 
             positions.append((x, y, alpha, font_size, rotation))
         return positions
@@ -43,7 +43,7 @@ class PositionCalculator:
             y = base_y
             alpha = 255
             font_size = None
-            rotation = 0  # FIX: Added missing rotation value
+            rotation = 0
 
             positions.append((x, y, alpha, font_size, rotation))
         return positions
@@ -69,21 +69,33 @@ class PositionCalculator:
         return positions
 
     def calculate_mic_pop_shrink_positions(self, base_x, base_y, base_font_size, duration):
-        """Calculate positions for pop and shrink animation with rubber band elasticity."""
+        """
+        Calculate positions for a faster, snappier pop and shrink animation
+        that is not dependent on the word's duration.
+        """
         positions = []
-        num_frames = int(duration / AnimationConstants.FRAME_DURATION)
-        if num_frames < 2:
-            num_frames = 2
+        
+        # --- NEW LOGIC ---
+        # The animation now happens over a fixed number of frames for a consistent, snappy speed.
+        animation_frames = 6  # A short, fixed number of frames for the pop effect.
+        
+        # This curve defines the font size scale at each frame of the entrance animation.
+        # It creates a quick pop up to 1.5x size, then settles back to 1.0x.
+        animation_curve = [1.2, 1.4, 1.5, 1.2, 1.0, 1.0]
 
-        for frame in range(num_frames):
-            progress = frame / (num_frames - 1)
-            # Simple pop effect
-            if progress < 0.2:
-                scale = 1 + progress * 2.5 # Pop up to 1.5
-            elif progress < 0.5:
-                scale = 1.5 - (progress - 0.2) * 1.66 # Shrink down to 1
+        # Calculate the total number of frames the word will be on screen
+        total_frames = int(duration / AnimationConstants.FRAME_DURATION)
+        if total_frames < 2:
+            total_frames = 2
+
+        for frame in range(total_frames):
+            if frame < animation_frames:
+                # If we are within the initial animation sequence, use the curve
+                scale = animation_curve[frame]
             else:
-                scale = 1
+                # Otherwise, the animation is over, so hold the final size
+                scale = 1.0
+            
             font_size = int(base_font_size * scale)
             rotation = 0
             alpha = 255
@@ -121,7 +133,7 @@ class PositionCalculator:
             size_multiplier = 1.0 + (AnimationConstants.PULSE_SCALE_FACTOR - 1.0) * size_variation
             font_size = int(base_font_size * size_multiplier)
             alpha = 255
-            rotation = 0  # FIX: Added missing rotation value
+            rotation = 0
 
             positions.append((base_x, base_y, alpha, font_size, rotation))
         return positions
@@ -137,7 +149,7 @@ class PositionCalculator:
             y = base_y + int(y_offset)
             alpha = 255
             font_size = None
-            rotation = 0  # FIX: Added missing rotation value
+            rotation = 0
 
             positions.append((x, y, alpha, font_size, rotation))
         return positions
@@ -158,7 +170,7 @@ class PositionCalculator:
             y = base_y + int(y_offset)
             alpha = int(255 * (1.0 - 0.9 * progress))
             font_size = None
-            rotation = 0  # FIX: Added missing rotation value
+            rotation = 0
 
             positions.append((x, y, alpha, font_size, rotation))
         return positions
@@ -176,7 +188,7 @@ class PositionCalculator:
             x_jitter = random.randint(-3, 3)
             font_size = None
             alpha = 255
-            rotation = 0  # FIX: Added missing rotation value
+            rotation = 0
 
             positions.append((base_x + x_jitter, base_y - int(y_offset), alpha, font_size, rotation))
         return positions

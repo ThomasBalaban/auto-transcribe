@@ -134,8 +134,8 @@ def fix_overlapping_timestamps(transcriptions, min_duration=0.1):
             
             # Fix overlap
             if curr_start < prev_end:
-                # Set current start time to previous end time
-                curr_start = prev_end
+                # Set current start time to previous end time plus a small gap
+                curr_start = prev_end + 0.01
                 
                 # Make sure duration is still reasonable
                 if curr_end < curr_start + min_duration:

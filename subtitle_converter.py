@@ -29,9 +29,10 @@ def convert_to_srt(input_text, output_file, video_file, log, is_mic_track=False)
         renderer = ASSRenderer()
         position_calculator = PositionCalculator()
         dialogue_lines = []
+        last_end_time = -1.0 # For logging
 
         timestamp_pattern = re.compile(r'(\d+\.\d+)-(\d+\.\d+):\s*(.*)')
-        for line in lines:
+        for line_num, line in enumerate(lines):
             line = line.strip()
             if not line:
                 continue
@@ -43,7 +44,6 @@ def convert_to_srt(input_text, output_file, video_file, log, is_mic_track=False)
                 text = timestamp_match.group(3).strip().upper()
                 duration = end_time - start_time
                 
-                # The animation calculator still needs dummy x/y values, but they won't be used for positioning.
                 dummy_x, dummy_y = 0, 0
 
                 positions = position_calculator.calculate_animation_positions(
@@ -55,27 +55,42 @@ def convert_to_srt(input_text, output_file, video_file, log, is_mic_track=False)
                 )
 
                 num_frames = len(positions)
-                frame_duration = duration / num_frames if num_frames > 0 else AnimationConstants.FRAME_DURATION
+                if num_frames == 0:
+                    continue
 
                 for frame, position_data in enumerate(positions):
-                    # We only need the font_size from the animation data now
                     _, _, _, frame_font_size, _ = position_data
                     
-                    frame_start = start_time + (frame * frame_duration)
-                    frame_end = frame_start + frame_duration
+                    # --- FIX: Robust timing calculation to prevent floating-point errors ---
+                    # Calculate start and end times based on progress through the total duration
+                    # This avoids accumulating small errors from adding frame_duration repeatedly.
+                    current_progress = frame / num_frames
+                    next_progress = (frame + 1) / num_frames
+                    
+                    frame_start = start_time + (current_progress * duration)
+                    frame_end = start_time + (next_progress * duration)
+                    # --- END FIX ---
+
                     if frame_end > end_time:
                         frame_end = end_time
                     if frame_start >= end_time:
                         break
+                    # Ensure a minimum duration for the last frame to be visible
+                    if frame == num_frames - 1 and frame_end - frame_start < 0.01:
+                        frame_start = frame_end - 0.01
 
-                    # Call the new renderer function that doesn't use \pos
+                    # Logging for verification
+                    overlap_detected = "!!! OVERLAP DETECTED !!!" if frame_start < last_end_time else ""
+                    log(f"[FRAME LOG] Word {line_num+1} ('{text}'), Frame {frame+1}/{num_frames}: "
+                        f"start={frame_start:.4f}, end={frame_end:.4f}, duration={frame_end-frame_start:.4f}s {overlap_detected}")
+                    last_end_time = frame_end
+
                     dialogue_line = renderer.create_mic_dialogue_line(
                         frame_start, frame_end, text, frame_font_size, style=AnimatedMicrophoneStyle.STYLE_NAME
                     )
                     dialogue_lines.append(dialogue_line)
 
         ass_header = renderer.create_ass_header()
-        # Add the animated mic style to the header
         ass_header = ass_header.replace(
             "[V4+ Styles]",
             f"[V4+ Styles]\n{AnimatedMicrophoneStyle.get_ass_style_string()}"
