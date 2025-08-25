@@ -5,10 +5,10 @@ Handles CLAP processing and audio event enhancement.
 
 import random
 import numpy as np
-import librosa
+import librosa # type: ignore
 import torch
 from typing import List, Dict, Optional
-from ollama_integration import OllamaLLM
+from llm.ollama_integration import OllamaLLM
 
 
 class AudioEnhancer:

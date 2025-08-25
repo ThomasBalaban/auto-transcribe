@@ -6,8 +6,8 @@ import sys
 import numpy as np  # type: ignore
 import whisperx # type: ignore
 from faster_whisper import WhisperModel  # type: ignore
-from timestamp_processor import apply_duration_adjustments, fix_overlapping_timestamps
-from hallucination_filter import filter_hallucinations, filter_hallucinations_with_whisperx_data
+from utils.timestamp_processor import apply_duration_adjustments, fix_overlapping_timestamps
+from utils.hallucination_filter import filter_hallucinations, filter_hallucinations_with_whisperx_data
 
 # Try importing WhisperX components with explicit error handling
 try:

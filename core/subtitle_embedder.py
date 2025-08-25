@@ -1,6 +1,6 @@
 import os
 import subprocess
-from subtitle_styles import TRACK2_STYLE, TRACK3_STYLE, OnomatopoeiaStyle
+from utils.subtitle_styles import TRACK2_STYLE, TRACK3_STYLE, OnomatopoeiaStyle
 
 def embed_subtitles(input_video, output_video, track2_srt, track3_srt, onomatopoeia_srt, onomatopoeia_events, log):
     """

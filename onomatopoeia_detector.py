@@ -6,12 +6,12 @@ non‑maximum suppression and global cooldown into the timing‑fix version.
 import os
 from typing import List, Dict, Tuple
 
-from onset_detector import GamingOnsetDetector
-from gemini_vision_analyzer import GeminiVisionAnalyzer
-from multimodal_fusion import MultimodalFusionEngine
-from gaming_optimizer import GamingOptimizer
+from audio.onset_detector import GamingOnsetDetector
+from llm.gemini_vision_analyzer import GeminiVisionAnalyzer
+from processing.multimodal_fusion import MultimodalFusionEngine
+from processing.gaming_optimizer import GamingOptimizer
 from subtitle_generator import SubtitleGenerator
-from file_processor import FileProcessor
+from utils.file_processor import FileProcessor
 
 
 class OnomatopoeiaDetector:

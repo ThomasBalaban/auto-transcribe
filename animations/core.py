@@ -51,7 +51,7 @@ class OnomatopoeiaAnimator:
 
     def create_animated_ass_events(self, events):
         """Create ASS dialogue events for all onomatopoeia with various animation styles."""
-        from subtitle_styles import OnomatopoeiaStyle
+        from utils.subtitle_styles import OnomatopoeiaStyle
         dialogue_lines = []
 
         for event in events:

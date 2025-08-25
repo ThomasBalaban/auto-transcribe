@@ -143,7 +143,7 @@ class TestDialogs:
 
             # Test Whisper/Transcription
             try:
-                from transcriber import WhisperModel
+                from core.transcriber import WhisperModel
                 app.log("✅ Whisper (for dialogue): OPERATIONAL")
             except Exception as e:
                 app.log(f"❌ Whisper (for dialogue): FAILED - {e}")

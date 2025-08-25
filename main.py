@@ -11,8 +11,8 @@ import traceback
 import json
 from tkinter import filedialog, messagebox
 
-from ui_components import UISetup, TestDialogs
-from video_processor import VideoProcessor
+from ui.ui_components import UISetup, TestDialogs
+from core.video_processor import VideoProcessor
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 

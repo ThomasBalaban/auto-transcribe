@@ -17,7 +17,7 @@ from scipy.signal import find_peaks
 import cv2
 
 try:
-    import librosa
+    import librosa # type: ignore
 except ImportError:
     librosa = None
 

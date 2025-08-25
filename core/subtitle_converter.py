@@ -5,7 +5,7 @@ from animations.renderer import ASSRenderer
 from animations.position_calculator import PositionCalculator
 from animations.animation_types import AnimationType
 from animations.utils import AnimationConstants
-from subtitle_styles import MicrophoneStyle, AnimatedMicrophoneStyle
+from utils.subtitle_styles import MicrophoneStyle, AnimatedMicrophoneStyle
 
 def format_time(seconds):
     """Format time in seconds to SRT format: HH:MM:SS,mmm"""

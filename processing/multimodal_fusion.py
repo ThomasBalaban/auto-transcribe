@@ -10,7 +10,7 @@ audio-visual event peak.
 import random
 from typing import List, Dict, Tuple
 from animations.core import OnomatopoeiaAnimator
-from ollama_integration import OllamaLLM
+from llm.ollama_integration import OllamaLLM
 
 
 class MultimodalFusionEngine:

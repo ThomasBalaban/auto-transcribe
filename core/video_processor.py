@@ -8,9 +8,9 @@ import gc # Import the garbage collector module
 # Import the main onomatopoeia detector
 from onomatopoeia_detector import OnomatopoeiaDetector
 # Import transcription and subtitle modules
-import transcriber
-from subtitle_converter import convert_to_srt
-from subtitle_embedder import embed_subtitles
+import core.transcriber
+from core.subtitle_converter import convert_to_srt
+from core.subtitle_embedder import embed_subtitles
 
 
 class VideoProcessor:
@@ -66,8 +66,8 @@ class VideoProcessor:
             # Transcribe Microphone (Track 2)
             log_func("\n-- Transcribing Microphone Audio (Track 2) --")
             mic_audio_path = os.path.join(temp_dir, f"{os.path.basename(input_file)}_mic.wav")
-            if transcriber.convert_to_audio(input_file, mic_audio_path, track_index="a:1"):
-                mic_transcriptions = transcriber.transcribe_audio("large", "cpu", mic_audio_path, True, log_func, "English", "Track 2 (Mic)")
+            if core.transcriber.convert_to_audio(input_file, mic_audio_path, track_index="a:1"):
+                mic_transcriptions = core.transcriber.transcribe_audio("large", "cpu", mic_audio_path, True, log_func, "English", "Track 2 (Mic)")
                 mic_subtitle_path_srt = os.path.join(temp_dir, f"{os.path.basename(input_file)}_mic.srt")
                 convert_to_srt("\n".join(mic_transcriptions), mic_subtitle_path_srt, input_file, log_func, is_mic_track=True)
                 # Correctly set the path to the generated .ass file
@@ -79,8 +79,8 @@ class VideoProcessor:
             # Transcribe Desktop (Track 3)
             log_func("\n-- Transcribing Desktop Audio (Track 3) --")
             desktop_audio_path = os.path.join(temp_dir, f"{os.path.basename(input_file)}_desktop.wav")
-            if transcriber.convert_to_audio(input_file, desktop_audio_path, track_index="a:2"):
-                desktop_transcriptions = transcriber.transcribe_audio("large", "cpu", desktop_audio_path, True, log_func, "English", "Track 3 (Desktop)")
+            if core.transcriber.convert_to_audio(input_file, desktop_audio_path, track_index="a:2"):
+                desktop_transcriptions = core.transcriber.transcribe_audio("large", "cpu", desktop_audio_path, True, log_func, "English", "Track 3 (Desktop)")
                 desktop_subtitle_path = os.path.join(temp_dir, f"{os.path.basename(input_file)}_desktop.srt")
                 convert_to_srt("\n".join(desktop_transcriptions), desktop_subtitle_path, input_file, log_func)
                 os.remove(desktop_audio_path)

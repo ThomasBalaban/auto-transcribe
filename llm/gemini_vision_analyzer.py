@@ -1,7 +1,7 @@
 # gemini_vision_analyzer.py
 
-import google.generativeai as genai
-from config import get_gemini_api_key
+import google.generativeai as genai # type: ignore
+from utils.config import get_gemini_api_key
 from typing import List, Dict, Set
 from PIL import Image
 import cv2

@@ -1,7 +1,7 @@
 # gemini_text_generator.py
 
-import google.generativeai as genai
-from config import get_gemini_api_key
+import config.google.generativeai as genai
+from utils.config import get_gemini_api_key
 from typing import Set
 
 class GeminiTextGenerator:

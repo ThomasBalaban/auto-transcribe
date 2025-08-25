@@ -3,9 +3,9 @@ Simplified embedder module for backward compatibility.
 Points to the main subtitle processing functions.
 """
 
-from subtitle_converter import convert_to_srt
-from subtitle_embedder import embed_dual_subtitles, embed_single_subtitles, embed_subtitles
-import subtitle_styles
+from core.subtitle_converter import convert_to_srt
+from core.subtitle_embedder import embed_dual_subtitles, embed_single_subtitles, embed_subtitles
+import utils.subtitle_styles as subtitle_styles
 from onomatopoeia_detector import OnomatopoeiaDetector
 
 __all__ = [
