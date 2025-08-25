@@ -30,6 +30,7 @@ class VideoProcessor:
         mic_subtitle_path = None
         desktop_subtitle_path = None
         onomatopoeia_events = []
+        mic_subtitle_path_srt = None # Keep track of the SRT file for cleanup
 
         try:
             log_func("="*60)
@@ -67,8 +68,10 @@ class VideoProcessor:
             mic_audio_path = os.path.join(temp_dir, f"{os.path.basename(input_file)}_mic.wav")
             if transcriber.convert_to_audio(input_file, mic_audio_path, track_index="a:1"):
                 mic_transcriptions = transcriber.transcribe_audio("large", "cpu", mic_audio_path, True, log_func, "English", "Track 2 (Mic)")
-                mic_subtitle_path = os.path.join(temp_dir, f"{os.path.basename(input_file)}_mic.srt")
-                convert_to_srt("\n".join(mic_transcriptions), mic_subtitle_path, input_file, log_func, is_mic_track=True)
+                mic_subtitle_path_srt = os.path.join(temp_dir, f"{os.path.basename(input_file)}_mic.srt")
+                convert_to_srt("\n".join(mic_transcriptions), mic_subtitle_path_srt, input_file, log_func, is_mic_track=True)
+                # Correctly set the path to the generated .ass file
+                mic_subtitle_path = mic_subtitle_path_srt.replace(".srt", ".ass")
                 os.remove(mic_audio_path)
             else:
                 log_func("ERROR: Failed to extract microphone audio. Skipping.")
@@ -87,11 +90,6 @@ class VideoProcessor:
 
             # --- 3. EMBED SUBTITLES ---
             log_func("\n--- PHASE 3: Embedding All Subtitles ---")
-            if not any([mic_subtitle_path, desktop_subtitle_path, onomatopoeia_subtitle_path]):
-                log_func("WARNING: No subtitles were generated. Copying original video.")
-                shutil.copy2(input_file, output_file)
-                return
-
             embed_subtitles(
                 input_video=input_file,
                 output_video=output_file,
@@ -112,7 +110,7 @@ class VideoProcessor:
         finally:
             # --- 4. CLEANUP ---
             log_func("\n--- Cleaning up temporary files ---")
-            for path in [onomatopoeia_subtitle_path, mic_subtitle_path, desktop_subtitle_path]:
+            for path in [onomatopoeia_subtitle_path, mic_subtitle_path, desktop_subtitle_path, mic_subtitle_path_srt]:
                 if path and os.path.exists(path):
                     try:
                         os.remove(path)

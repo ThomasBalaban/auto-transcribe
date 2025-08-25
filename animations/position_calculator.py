@@ -68,6 +68,29 @@ class PositionCalculator:
             positions.append((base_x, base_y, alpha, font_size, rotation))
         return positions
 
+    def calculate_mic_pop_shrink_positions(self, base_x, base_y, base_font_size, duration):
+        """Calculate positions for pop and shrink animation with rubber band elasticity."""
+        positions = []
+        num_frames = int(duration / AnimationConstants.FRAME_DURATION)
+        if num_frames < 2:
+            num_frames = 2
+
+        for frame in range(num_frames):
+            progress = frame / (num_frames - 1)
+            # Simple pop effect
+            if progress < 0.2:
+                scale = 1 + progress * 2.5 # Pop up to 1.5
+            elif progress < 0.5:
+                scale = 1.5 - (progress - 0.2) * 1.66 # Shrink down to 1
+            else:
+                scale = 1
+            font_size = int(base_font_size * scale)
+            rotation = 0
+            alpha = 255
+            positions.append((base_x, base_y, alpha, font_size, rotation))
+
+        return positions
+
     def calculate_shake_positions(self, base_x, base_y):
         """Calculate positions for shake animation with exponential decay and rotation."""
         positions = []
@@ -158,7 +181,7 @@ class PositionCalculator:
             positions.append((base_x + x_jitter, base_y - int(y_offset), alpha, font_size, rotation))
         return positions
 
-    def calculate_animation_positions(self, animation_type, base_x, base_y, base_font_size=140, word_length=5):
+    def calculate_animation_positions(self, animation_type, base_x, base_y, base_font_size=140, word_length=5, duration=0.5):
         """Calculate positions for any animation type."""
         if animation_type == AnimationType.DRIFT_FADE:
             return self.calculate_drift_positions(base_x, base_y)
@@ -176,6 +199,8 @@ class PositionCalculator:
             return self.calculate_explode_out_positions(base_x, base_y)
         elif animation_type == AnimationType.HYPER_BOUNCE:
             return self.calculate_hyper_bounce_positions(base_x, base_y)
+        elif animation_type == AnimationType.MIC_POP_SHRINK:
+            return self.calculate_mic_pop_shrink_positions(base_x, base_y, base_font_size, duration)
         else:
             return self.calculate_drift_positions(base_x, base_y)
 

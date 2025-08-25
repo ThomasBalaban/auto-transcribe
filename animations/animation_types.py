@@ -15,6 +15,7 @@ class AnimationType:
     WAVE = "wave"
     EXPLODE_OUT = "explode_out"
     HYPER_BOUNCE = "hyper_bounce"
+    MIC_POP_SHRINK = "mic_pop_shrink"
 
     @classmethod
     def get_all_types(cls):
@@ -27,7 +28,8 @@ class AnimationType:
             cls.PULSE,
             cls.WAVE,
             cls.EXPLODE_OUT,
-            cls.HYPER_BOUNCE
+            cls.HYPER_BOUNCE,
+            cls.MIC_POP_SHRINK,
         ]
 
     @classmethod
@@ -41,7 +43,8 @@ class AnimationType:
             cls.PULSE: "Pulse",
             cls.WAVE: "Wave",
             cls.EXPLODE_OUT: "Explode-Out",
-            cls.HYPER_BOUNCE: "Hyper Bounce"
+            cls.HYPER_BOUNCE: "Hyper Bounce",
+            cls.MIC_POP_SHRINK: "Mic Pop Shrink",
         }
 
     @classmethod
@@ -58,7 +61,8 @@ class AnimationType:
             cls.PULSE: 2,        # Peak of the first pulse
             cls.WAVE: 7,         # Middle of the wave crest
             cls.EXPLODE_OUT: 0,  # Impact is immediate
-            cls.HYPER_BOUNCE: 2  # Peak of the first bounce
+            cls.HYPER_BOUNCE: 2,  # Peak of the first bounce
+            cls.MIC_POP_SHRINK: 2, # The largest "pop"
         }
         return peak_frames.get(animation_type, 0)
 
@@ -74,7 +78,8 @@ class AnimationType:
             cls.PULSE: "Text pulses larger and smaller in smooth cycles",
             cls.WAVE: "Letters lean and move in a wave pattern (per-letter)",
             cls.EXPLODE_OUT: "Letters explode outward from center with rotation (per-letter)",
-            cls.HYPER_BOUNCE: "Text bounces multiple times with decreasing amplitude"
+            cls.HYPER_BOUNCE: "Text bounces multiple times with decreasing amplitude",
+            cls.MIC_POP_SHRINK: "Text pops and shrinks based on microphone input.",
         }
         return descriptions.get(animation_type, "Unknown animation type")
 

@@ -34,6 +34,35 @@ class MicrophoneStyle:
             f"Alignment={cls.ALIGNMENT},MarginV={cls.MARGIN_V},MarginL={cls.MARGIN_L},MarginR={cls.MARGIN_R}"
         )
 
+class AnimatedMicrophoneStyle:
+    """Style for Track 2 (Microphone) - Teal text with darker gray stroke, using BubbleGum font"""
+    STYLE_NAME = "AnimatedMic"
+    FONT_NAME = "BubbleGum"
+    FONT_SIZE = 100
+    PRIMARY_COLOR = "&H00d2ff00"  # Teal color
+    OUTLINE_COLOR = "&H00171717"  # Dark gray
+    BACKGROUND_COLOR = "&H00000000"  # Transparent
+    BOLD = 1
+    ITALIC = 0
+    BORDER_STYLE = 1  # Outline
+    OUTLINE = 10
+    SHADOW = 1
+    ALIGNMENT = 2  # Bottom-center alignment
+    MARGIN_V = 640
+    MARGIN_L = 40
+    MARGIN_R = 40
+    ENCODING = 1
+
+    @classmethod
+    def get_ass_style_string(cls):
+        """Generate the ASS style string."""
+        return (
+            f"Style: {cls.STYLE_NAME},{cls.FONT_NAME},{cls.FONT_SIZE},"
+            f"{cls.PRIMARY_COLOR},&H00000000,{cls.OUTLINE_COLOR},{cls.BACKGROUND_COLOR},"
+            f"{cls.BOLD},{cls.ITALIC},0,0,100,100,0,0,{cls.BORDER_STYLE},{cls.OUTLINE},"
+            f"{cls.SHADOW},{cls.ALIGNMENT},{cls.MARGIN_L},{cls.MARGIN_R},{cls.MARGIN_V},{cls.ENCODING}"
+        )
+
 
 class DesktopStyle:
     """Style for Track 3 (Desktop) - positioned below mic subtitles"""

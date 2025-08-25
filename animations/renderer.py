@@ -28,25 +28,20 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     
     @staticmethod
-    def create_ass_dialogue_line(start_time, end_time, text, x, y, alpha, font_size):
-        """Create an ASS dialogue line with absolute positioning and optional font size."""
+    def create_mic_dialogue_line(start_time, end_time, text, font_size, style):
+        """Creates a dialogue line for animated mic subs, using style for position."""
         start_formatted = TimeFormatter.format_ass_time(start_time)
         end_formatted = TimeFormatter.format_ass_time(end_time)
         
-        alpha_hex = f"{255 - alpha:02X}"
-        
-        # Build override tags properly
-        override_tags = f"{{\\pos({x},{y})\\alpha&H{alpha_hex}&"
-        if font_size is not None:
-            override_tags += f"\\fs{font_size}"
-        override_tags += "}"  # Single closing brace, not double
-        
+        # Only override the font size for the pop animation
+        override_tags = f"{{\\fs{font_size}}}"
         styled_text = f"{override_tags}{text}"
         
-        return f"Dialogue: 0,{start_formatted},{end_formatted},Onomatopoeia,,0,0,0,,{styled_text}"
-    
+        # Margins are 0,0,0 so the style's own margins are used for positioning
+        return f"Dialogue: 0,{start_formatted},{end_formatted},{style},,0,0,0,,{styled_text}"
+
     @staticmethod
-    def create_ass_dialogue_line_with_rotation(start_time, end_time, text, x, y, alpha, font_size, rotation=0):
+    def create_ass_dialogue_line_with_rotation(start_time, end_time, text, x, y, alpha, font_size, rotation=0, style="Onomatopoeia"):
         """Create an ASS dialogue line with optional rotation."""
         start_formatted = TimeFormatter.format_ass_time(start_time)
         end_formatted = TimeFormatter.format_ass_time(end_time)
@@ -63,7 +58,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         
         styled_text = f"{override_tags}{text}"
         
-        return f"Dialogue: 0,{start_formatted},{end_formatted},Onomatopoeia,,0,0,0,,{styled_text}"
+        return f"Dialogue: 0,{start_formatted},{end_formatted},{style},,0,0,0,,{styled_text}"
     
     @staticmethod
     def create_wave_ass_dialogue_line(start_time, end_time, text, x, y, alpha, font_size, rotation_degrees):
@@ -92,44 +87,3 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         styled_text = f"{override_tags}{text}"
         
         return f"Dialogue: 0,{start_formatted},{end_formatted},Onomatopoeia,,0,0,0,,{styled_text}"
-
-
-def create_animated_onomatopoeia_ass(audio_path, output_ass_path, animation_setting="Random", log_func=None):
-    """Create an animated onomatopoeia ASS file from an audio file with enhanced animation options."""
-    try:
-        from onomatopoeia_detector import OnomatopoeiaDetector
-        from .core import OnomatopoeiaAnimator
-        
-        detector = OnomatopoeiaDetector(log_func=log_func)
-        events = detector.analyze_audio_file(audio_path)
-        
-        if not events:
-            if log_func:
-                log_func("No onomatopoeia events detected for animation")
-            return False, []
-        
-        if log_func:
-            log_func(f"Creating animated onomatopoeia ASS file with {len(events)} events...")
-            log_func(f"Animation type setting: {animation_setting}")
-            log_func(f"Available animations: {', '.join(OnomatopoeiaAnimator.get_all_animation_types())}")
-            from .utils import AnimationConstants
-            log_func(f"Each effect will have {AnimationConstants.ANIMATION_FRAMES} animation frames")
-        
-        animator = OnomatopoeiaAnimator()
-        animated_ass_content = animator.generate_animated_ass_content(events, animation_setting)
-        
-        with open(output_ass_path, 'w', encoding='utf-8') as f:
-            f.write(animated_ass_content)
-        
-        if log_func:
-            log_func(f"Enhanced animated onomatopoeia ASS file created: {output_ass_path}")
-            log_func(f"Generated {len(events)} animated sound effects")
-            from .utils import AnimationConstants
-            log_func(f"Total dialogue entries: {len(events) * AnimationConstants.ANIMATION_FRAMES}")
-        
-        return True, events
-        
-    except Exception as e:
-        if log_func:
-            log_func(f"Error creating animated onomatopoeia ASS: {e}")
-        return False, []
