@@ -47,7 +47,8 @@ class OnomatopoeiaDetector:
         audio_path = None
         try:
             self.log_func(f"\n{'='*60}\nSTARTING CROSS‑MODAL ANALYSIS\n{'='*60}")
-            audio_path = self.file_processor.extract_audio_from_video(video_path, track_index="a:1")
+            # --- FIX: Listen to desktop audio (a:2) for sound effects, not mic audio (a:1) ---
+            audio_path = self.file_processor.extract_audio_from_video(video_path, track_index="a:2")
 
             # 1. Audio Analysis
             audio_events = self.onset_detector.detect_gaming_onsets(audio_path)
