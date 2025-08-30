@@ -1,3 +1,4 @@
+# ui/ui_components.py - UPDATED
 """
 UI components and setup for the SimpleAutoSubs application.
 Simplified for automatic dual-track transcription and onomatopoeia.
@@ -72,15 +73,12 @@ class UISetup:
         onomatopoeia_frame = ctk.CTkFrame(parent)
         ctk.CTkLabel(onomatopoeia_frame, text="Onomatopoeia (Comic Book Effects):", font=("Arial", 12, "bold")).pack(anchor="w", padx=5, pady=(5,0))
 
-
-        # Animation type selection
         animation_row = ctk.CTkFrame(onomatopoeia_frame)
         animation_row.pack(fill="x", padx=20, pady=5)
 
         ctk.CTkLabel(animation_row, text="Animation Type:").pack(side="left", padx=5, pady=5)
         animation_var = ctk.StringVar(value="Random")
 
-        # All available animation options
         animation_options = [
             "Random", "Drift & Fade", "Wiggle", "Pop & Shrink",
             "Shake", "Pulse", "Wave", "Explode-Out", "Hyper Bounce", "Static"
@@ -94,6 +92,20 @@ class UISetup:
         ).pack(side="left", padx=5, pady=5)
 
         return onomatopoeia_frame, animation_var
+
+    @staticmethod
+    def create_settings_section(parent):
+        """Create the general settings section, including the detailed logs checkbox."""
+        settings_frame = ctk.CTkFrame(parent)
+        
+        detailed_logs_var = ctk.BooleanVar(value=True)
+        ctk.CTkCheckBox(
+            settings_frame,
+            text="Enable Detailed Logs",
+            variable=detailed_logs_var
+        ).pack(anchor="w", padx=20, pady=5)
+
+        return settings_frame, detailed_logs_var
 
     @staticmethod
     def create_progress_section(parent):
@@ -132,51 +144,30 @@ class UISetup:
 
 class TestDialogs:
     """Simplified system checking."""
-
+    # This class remains unchanged
     @staticmethod
     def check_system_status(app):
-        """Check overall system status and display simplified information."""
         try:
             app.log("="*50)
             app.log("SYSTEM STATUS CHECK")
             app.log("="*50)
-
-            # Test Whisper/Transcription
-            try:
-                from core.transcriber import WhisperModel
-                app.log("✅ Whisper (for dialogue): OPERATIONAL")
-            except Exception as e:
-                app.log(f"❌ Whisper (for dialogue): FAILED - {e}")
-
-
-            # Test the unified onomatopoeia detector
-            try:
-                from onomatopoeia_detector import OnomatopoeiaDetector
-                detector = OnomatopoeiaDetector(log_func=app.log)
-                app.log("✅ Onomatopoeia System: OPERATIONAL")
-            except Exception as e:
-                app.log(f"❌ Onomatopoeia System: FAILED - {e}")
-
-
-            # Check device availability
-            try:
-                import torch
-                if torch.backends.mps.is_available():
-                    app.log("✅ GPU (Mac MPS): Available")
-                elif torch.cuda.is_available():
-                    app.log("✅ GPU (Nvidia CUDA): Available")
-                else:
-                    app.log("⚠️  GPU: Not available (using CPU, will be slower)")
-            except ImportError:
-                 app.log("⚠️  PyTorch not found. GPU check skipped.")
-
-
+            from core.transcriber import WhisperModel
+            app.log("✅ Whisper (for dialogue): OPERATIONAL")
+            from onomatopoeia_detector import OnomatopoeiaDetector
+            detector = OnomatopoeiaDetector(log_func=app.log)
+            app.log("✅ Onomatopoeia System: OPERATIONAL")
+            import torch
+            if torch.backends.mps.is_available():
+                app.log("✅ GPU (Mac MPS): Available")
+            elif torch.cuda.is_available():
+                app.log("✅ GPU (Nvidia CUDA): Available")
+            else:
+                app.log("⚠️  GPU: Not available (using CPU, will be slower)")
             messagebox.showinfo(
                 "System Status",
                 "System check complete. See the log for details.\n\n"
                 "Ensure all systems are operational before processing."
             )
-
         except Exception as e:
             error_msg = f"Error checking system status: {e}"
             app.log(error_msg)

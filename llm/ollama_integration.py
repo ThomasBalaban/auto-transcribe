@@ -1,4 +1,4 @@
-# ollama_integration.py
+# llm/ollama_integration.py - UPDATED
 
 """
 Ollama LLM Integration for Onomatopoeia Generation and Animation Selection.
@@ -46,47 +46,64 @@ class OllamaLLM:
             self.log_func(f"❌ Ollama connection failed. Make sure Ollama is running.")
             return False
 
+    def _send_request(self, payload: dict) -> dict:
+        """Sends a request to the Ollama API and returns the JSON response."""
+        response = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=20)
+        response.raise_for_status() # Will raise an exception for non-200 status codes
+        return response.json()
+
+    def generate(self, prompt: str) -> Optional[str]:
+        """
+        Generic text generation for any given prompt.
+        """
+        if not self.available:
+            return None
+        try:
+            payload = {"model": self.model_name, "prompt": prompt, "stream": False}
+            result = self._send_request(payload)
+            return result.get('response', '').strip()
+        except Exception as e:
+            self.log_func(f"💥 Ollama generic generation error: {e}")
+            return None
+
+
     def generate_onomatopoeia(self, video_caption: str, audio_context: str, scene_context: Set[str]) -> Optional[str]:
-        # ... (This method remains unchanged)
         """Generate onomatopoeia using the local Ollama model with enhanced context."""
         if not self.available:
             return None
 
+        full_context = (
+            f"**Visual Context:** {video_caption}\n"
+            f"**Audio Characteristics:** {audio_context}\n"
+            f"**Scene Environment:** {', '.join(scene_context) if scene_context else 'N/A'}"
+        )
+        prompt = (
+            "You are an expert comic book artist. Your task is to create the perfect onomatopoeia based on very specific rules.\n\n"
+            "Here are examples of how to map context to a sound word. Be literal and descriptive.\n"
+            "- Context: Visual of a gunshot, audio is a sharp, high-frequency sound. -> Onomatopoeia: BLAM!\n"
+            "- Context: Visual of a character falling into water, audio is a low-frequency sound. -> Onomatopoeia: SPLOOSH!\n"
+            "- Context: Visual of a small object hitting a metal surface. -> Onomatopoeia: CLANK!\n"
+            "- Context: Visual of something electrical. -> Onomatopoeia: ZAP!\n"
+            "- Context: Visual of a heavy object hitting the ground. -> Onomatopoeia: THUD!\n\n"
+            "**RULES:**\n"
+            "1.  **BE LITERAL:** The word must literally represent the sound. Avoid creative, abstract, or funny words. 'KERCHOW' is a bad example. 'CRASH' is a good example.\n"
+            "2.  **Analyze all context provided.**\n"
+            "3.  **Create a single, impactful word in ALL CAPS.**\n"
+            "4.  **Output ONLY the onomatopoeia word.**\n\n"
+            f"**CONTEXT:**\n{full_context}\n\n"
+            "**Onomatopoeia:**"
+        )
         try:
-            full_context = (
-                f"**Visual Context:** {video_caption}\n"
-                f"**Audio Characteristics:** {audio_context}\n"
-                f"**Scene Environment:** {', '.join(scene_context) if scene_context else 'N/A'}"
-            )
-            prompt = (
-                "You are an expert comic book artist. Your task is to create the perfect onomatopoeia based on very specific rules.\n\n"
-                "Here are examples of how to map context to a sound word. Be literal and descriptive.\n"
-                "- Context: Visual of a gunshot, audio is a sharp, high-frequency sound. -> Onomatopoeia: BLAM!\n"
-                "- Context: Visual of a character falling into water, audio is a low-frequency sound. -> Onomatopoeia: SPLOOSH!\n"
-                "- Context: Visual of a small object hitting a metal surface. -> Onomatopoeia: CLANK!\n"
-                "- Context: Visual of something electrical. -> Onomatopoeia: ZAP!\n"
-                "- Context: Visual of a heavy object hitting the ground. -> Onomatopoeia: THUD!\n\n"
-                "**RULES:**\n"
-                "1.  **BE LITERAL:** The word must literally represent the sound. Avoid creative, abstract, or funny words. 'KERCHOW' is a bad example. 'CRASH' is a good example.\n"
-                "2.  **Analyze all context provided.**\n"
-                "3.  **Create a single, impactful word in ALL CAPS.**\n"
-                "4.  **Output ONLY the onomatopoeia word.**\n\n"
-                f"**CONTEXT:**\n{full_context}\n\n"
-                "**Onomatopoeia:**"
-            )
             payload = { "model": self.model_name, "prompt": prompt, "stream": False }
-            response = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=20)
-
-            if response.status_code == 200:
-                result = response.json()
-                raw_output = result.get('response', '').strip()
-                cleaned = self._clean_output(raw_output)
-                if cleaned:
-                    self.log_func(f"✨ Ollama generated: '{cleaned}'")
-                    return cleaned
+            result = self._send_request(payload)
+            raw_output = result.get('response', '').strip()
+            cleaned = self._clean_output(raw_output)
+            if cleaned:
+                self.log_func(f"✨ Ollama generated: '{cleaned}'")
+                return cleaned
             return None
         except Exception as e:
-            self.log_func(f"💥 Ollama generation error: {e}")
+            self.log_func(f"💥 Ollama onomatopoeia generation error: {e}")
             return None
 
 
@@ -127,19 +144,16 @@ class OllamaLLM:
         }
 
         try:
-            response = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=20)
-            if response.status_code == 200:
-                result = response.json()
-                choice = result.get('response', '').strip().lower().replace(" ", "_")
+            result = self._send_request(payload)
+            choice = result.get('response', '').strip().lower().replace(" ", "_")
 
-                # Validate the choice
-                if choice in valid_animations:
-                    self.log_func(f"🧠 AI chose animation: '{choice}'")
-                    return choice
-                else:
-                    self.log_func(f"⚠️ AI returned an invalid animation choice: '{choice}'. Falling back.")
-                    return None
-            return None
+            # Validate the choice
+            if choice in valid_animations:
+                self.log_func(f"🧠 AI chose animation: '{choice}'")
+                return choice
+            else:
+                self.log_func(f"⚠️ AI returned an invalid animation choice: '{choice}'. Falling back.")
+                return None
         except Exception as e:
             self.log_func(f"💥 AI animation choice error: {e}")
             return None

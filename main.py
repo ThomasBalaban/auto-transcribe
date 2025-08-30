@@ -1,12 +1,8 @@
-"""
-SimpleAutoSubs - Main Application
-Dual track subtitle generator with multimodal animated onomatopoeia effects.
-"""
-
+# main.py - UPDATED
 import os
 import threading
 import queue
-import customtkinter as ctk # type: ignore
+import customtkinter as ctk
 import traceback
 import json
 from tkinter import filedialog, messagebox
@@ -21,31 +17,18 @@ class DualSubtitleApp:
     def __init__(self, root):
         self.root = root
         self.root.title("SimpleAutoSubs - Multimodal Onomatopoeia Subtitler")
-
-        # Threading and logging
         self.message_queue = queue.Queue()
         self.processing_active = False
         self.current_process_index = -1
-
-        # File management
         self.input_files = []
         self.output_files = []
         self.file_indices = []
-
-        # Set up UI
         self.setup_ui()
-
-        # Start log message processing
         self.root.after(100, self.process_log_messages)
-
-        # Load window geometry
         self.load_window_geometry()
-
-        # Set the protocol for closing the window
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def save_window_geometry(self):
-        """Saves the current window geometry to a file."""
         try:
             geometry = self.root.geometry()
             with open("window_geometry.json", "w") as f:
@@ -54,7 +37,6 @@ class DualSubtitleApp:
             self.log(f"Error saving window geometry: {e}")
 
     def load_window_geometry(self):
-        """Loads the window geometry from a file and applies it."""
         try:
             if os.path.exists("window_geometry.json"):
                 with open("window_geometry.json", "r") as f:
@@ -63,12 +45,10 @@ class DualSubtitleApp:
                     if geometry:
                         self.root.geometry(geometry)
         except Exception as e:
-            # If there's an error (e.g., corrupted file), start with default geometry
             self.log(f"Error loading window geometry: {e}. Using default.")
             self.root.geometry("700x750")
 
     def on_closing(self):
-        """Handles the window closing event."""
         self.save_window_geometry()
         self.root.destroy()
 
@@ -76,38 +56,34 @@ class DualSubtitleApp:
         """Create and arrange all UI elements."""
         frame = UISetup.create_main_layout(self.root)
         frame.grid_columnconfigure(0, weight=1)
-        frame.grid_rowconfigure(5, weight=1) # Log box row expands
+        frame.grid_rowconfigure(6, weight=1) # Log box row is now 6
 
-        # Row 0: File List
         files_frame, self.files_textbox = UISetup.create_file_list_section(frame, self)
         files_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
 
-        # Row 1: Output Directory
         output_frame, self.output_dir_entry = UISetup.create_output_directory_section(frame, self)
         output_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
 
-        # Row 2: Onomatopoeia Settings
         onomatopoeia_frame, self.animation_var = UISetup.create_onomatopoeia_section(frame, self)
         onomatopoeia_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
 
-        # Row 3: Progress Section
+        # --- NEW: Settings Section ---
+        settings_frame, self.detailed_logs_var = UISetup.create_settings_section(frame)
+        settings_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
+
         progress_frame, self.progress_label, self.progress_bar = UISetup.create_progress_section(frame)
-        progress_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
+        progress_frame.grid(row=4, column=0, sticky="ew", padx=5, pady=5) # Row is now 4
 
-        # Row 4: Process Button
         self.process_button = UISetup.create_process_button(frame, self)
-        self.process_button.grid(row=4, column=0, pady=10)
+        self.process_button.grid(row=5, column=0, pady=10) # Row is now 5
 
-        # Row 5: Log Area
         log_frame, self.log_box = UISetup.create_log_section(frame)
-        log_frame.grid(row=5, column=0, sticky="nsew", padx=5, pady=5)
+        log_frame.grid(row=6, column=0, sticky="nsew", padx=5, pady=5) # Row is now 6
 
     def log(self, message):
-        """Thread-safe log function."""
         self.message_queue.put(message + "\n")
 
     def process_log_messages(self):
-        """Process log messages in the main thread."""
         try:
             while True:
                 message = self.message_queue.get_nowait()
@@ -119,31 +95,23 @@ class DualSubtitleApp:
             self.root.after(100, self.process_log_messages)
 
     def check_system_status(self):
-        """Check multimodal system status."""
         TestDialogs.check_system_status(self)
 
     def add_files(self):
-        """Add multiple files to the list."""
+        # This method remains unchanged
         if len(self.input_files) >= 15:
             messagebox.showwarning("Maximum Files Reached", "You can only process up to 15 files at once.")
             return
-
         file_paths = filedialog.askopenfilenames(filetypes=[("Video files", "*.mp4 *.mkv *.avi")])
         if not file_paths:
             return
-
         if len(self.input_files) + len(file_paths) > 15:
             remaining = 15 - len(self.input_files)
-            messagebox.showwarning(
-                "Maximum Files Reached",
-                f"You can only add {remaining} more file(s)."
-            )
+            messagebox.showwarning("Maximum Files Reached", f"You can only add {remaining} more file(s).")
             file_paths = file_paths[:remaining]
-
         for file_path in file_paths:
             if file_path in self.input_files:
                 continue
-
             self.input_files.append(file_path)
             input_basename = os.path.basename(file_path)
             input_name, _ = os.path.splitext(input_basename)
@@ -153,7 +121,6 @@ class DualSubtitleApp:
                 output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
                 self.output_dir_entry.delete(0, ctk.END)
                 self.output_dir_entry.insert(0, output_dir)
-
             output_path = os.path.join(output_dir, output_filename)
             unique_output_path = self.get_unique_output_path(output_path)
             self.output_files.append(unique_output_path)
@@ -162,7 +129,7 @@ class DualSubtitleApp:
             self.file_indices.append(len(self.input_files) - 1)
 
     def remove_selected_file(self):
-        """Remove the last file from the list."""
+        # This method remains unchanged
         if not self.input_files:
             messagebox.showinfo("No Files", "There are no files to remove.")
             return
@@ -171,14 +138,14 @@ class DualSubtitleApp:
         self.refresh_file_display()
 
     def clear_all_files(self):
-        """Clear all files from the list."""
+        # This method remains unchanged
         self.input_files = []
         self.output_files = []
         self.file_indices = []
         self.files_textbox.delete("1.0", ctk.END)
 
     def refresh_file_display(self):
-        """Refresh the file display."""
+        # This method remains unchanged
         self.files_textbox.delete("1.0", ctk.END)
         self.file_indices = []
         for i, (input_file, output_file) in enumerate(zip(self.input_files, self.output_files)):
@@ -187,7 +154,7 @@ class DualSubtitleApp:
             self.file_indices.append(i)
 
     def browse_output_dir(self):
-        """Browse for output directory."""
+        # This method remains unchanged
         output_dir = filedialog.askdirectory()
         if output_dir:
             self.output_dir_entry.delete(0, ctk.END)
@@ -195,7 +162,7 @@ class DualSubtitleApp:
             self.update_output_paths(output_dir)
 
     def update_output_paths(self, output_dir):
-        """Update all output paths based on a new directory."""
+        # This method remains unchanged
         if not self.input_files:
             return
         for i, input_path in enumerate(self.input_files):
@@ -208,7 +175,7 @@ class DualSubtitleApp:
         self.refresh_file_display()
 
     def get_unique_output_path(self, base_path):
-        """Generate a unique output filename by adding incremental counters."""
+        # This method remains unchanged
         if not os.path.exists(base_path):
             return base_path
         filename, ext = os.path.splitext(base_path)
@@ -218,7 +185,7 @@ class DualSubtitleApp:
         return f"{filename}-{counter}{ext}"
 
     def start_batch_processing_thread(self):
-        """Start the batch processing in a separate thread."""
+        # This method remains unchanged
         if not self.input_files:
             messagebox.showinfo("No Files", "Please add at least one video file to process.")
             return
@@ -236,18 +203,20 @@ class DualSubtitleApp:
         threading.Thread(target=self.process_all_videos).start()
 
     def process_all_videos(self):
-        """Process all videos in the input list sequentially."""
+        """Process all videos, now passing the detailed_logs setting."""
         try:
             total_videos = len(self.input_files)
             self.log(f"Starting batch processing of {total_videos} videos...")
 
             animation_type = self.animation_var.get()
+            detailed_logs = self.detailed_logs_var.get() # Get the value from the checkbox
             self.log("SETTINGS: Automatic dialogue transcription and onomatopoeia are ENABLED.")
             self.log(f"  - Animation Type: {animation_type}")
+            self.log(f"  - Detailed AI Logs: {detailed_logs}")
 
             for i, (input_file, output_file) in enumerate(zip(self.input_files, self.output_files)):
                 self.current_process_index = i
-
+                
                 def update_progress():
                     self.progress_label.configure(text=f"Processing {i+1}/{total_videos}: {os.path.basename(input_file)}")
                     self.progress_bar.set(i / total_videos)
@@ -259,6 +228,7 @@ class DualSubtitleApp:
                     input_file=input_file,
                     output_file=output_file,
                     animation_type=animation_type,
+                    detailed_logs=detailed_logs, # Pass the setting
                     log_func=self.log
                 )
 
@@ -284,13 +254,12 @@ class DualSubtitleApp:
                 self.process_button.configure(state="normal", text="Process All Videos")
                 messagebox.showerror("Processing Error", f"An error occurred: {e}")
             self.root.after(0, reset_ui_error)
-
         finally:
             self.processing_active = False
             self.current_process_index = -1
 
     def update_file_display_with_completion(self, completed_index):
-        """Update file display to show completion status."""
+        # This method remains unchanged
         self.files_textbox.delete("1.0", ctk.END)
         for j, (in_file, out_file) in enumerate(zip(self.input_files, self.output_files)):
             display_text = f"{os.path.basename(in_file)} → {os.path.basename(out_file)}"
@@ -301,7 +270,6 @@ class DualSubtitleApp:
 
 
 def main():
-    """Initialize and run the application."""
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("blue")
     root = ctk.CTk()
