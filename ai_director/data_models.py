@@ -15,7 +15,6 @@ import uuid
 @dataclass
 class DirectorTask:
     """A task dispatched by the Master Director to a specialist AI."""
-    # --- Fields without defaults come first ---
     task_type: Literal[
         "analyze_text_content",
         "analyze_audio_event",
@@ -23,8 +22,6 @@ class DirectorTask:
     ]
     time_range: Tuple[float, float]
     priority: Literal["low", "medium", "high"]
-
-    # --- Fields with defaults follow ---
     task_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     context: Dict[str, any] = field(default_factory=dict)
     instructions: str = ""
@@ -34,18 +31,14 @@ class SpecialistResponse:
     """A response from a specialist AI back to the Master Director."""
     task_id: str
     result: Literal[
-        "wild_content_detected",
-        "awkward_content_detected",
-        "fear_surprise_detected",
-        "dramatic_moment_detected",
-        "attention_direction_detected",
-        "no_significant_event"
+        "wild_content_detected", "awkward_content_detected", "fear_surprise_detected",
+        "dramatic_moment_detected", "attention_direction_detected", "no_significant_event",
+        "dramatic_moment_visual"
     ]
     confidence: float
     recommended_action: Optional[Literal[
-        "zoom_to_cam",
-        "zoom_to_game",
-        "zoom_out"
+        "zoom_to_cam", "zoom_to_game", "zoom_out",
+        "zoom_to_cam_reaction"
     ]] = None
     details: Dict[str, any] = field(default_factory=dict)
 
@@ -56,10 +49,8 @@ class TimelineEvent:
     """Represents a single editing decision in the final timeline."""
     timestamp: float
     action: Literal[
-        "zoom_to_cam",
-        "zoom_to_game",
-        "zoom_out",
-        "no_action"
+        "zoom_to_cam", "zoom_to_game", "zoom_out", "no_action",
+        "zoom_to_cam_reaction"
     ]
     duration: float
     reason: str

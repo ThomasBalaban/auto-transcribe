@@ -1,7 +1,8 @@
-# ai_director/specialists.py - UPDATED
+# ai_director/specialists.py
 from typing import Dict
 from ai_director.data_models import DirectorTask, SpecialistResponse
 from llm.ollama_integration import OllamaLLM
+from llm.gemini_vision_analyzer import GeminiVisionAnalyzer
 
 class SpecialistManager:
     """Manages and executes tasks for all specialist AIs."""
@@ -11,63 +12,41 @@ class SpecialistManager:
         self.text_analyzer_llm = OllamaLLM(log_func=self.log_func)
         self.log_func("🤖 AI Director Specialist Manager initialized.")
 
-    def dispatch_task(self, task: DirectorTask, full_transcript: str) -> SpecialistResponse:
+    def dispatch_task(self, task: DirectorTask, full_transcript: str, video_path: str, video_analysis_map: Dict[float, Dict]) -> SpecialistResponse:
         """Routes a task to the appropriate specialist handler."""
         if task.task_type == "analyze_text_content":
             return self._analyze_text_content(task, full_transcript)
         elif task.task_type == "analyze_audio_event":
             return self._analyze_audio_event(task)
         elif task.task_type == "analyze_visual_context":
-            return self._analyze_visual_context(task)
+            return self._analyze_visual_context(task, video_analysis_map)
         else:
-            return SpecialistResponse(
-                task_id=task.task_id,
-                result="no_significant_event",
-                confidence=1.0,
-                details={"error": f"Unknown task type: {task.task_type}"}
-            )
+            return SpecialistResponse(task_id=task.task_id, result="no_significant_event", confidence=1.0, details={"error": f"Unknown task type: {task.task_type}"})
 
     def _analyze_text_content(self, task: DirectorTask, full_transcript: str) -> SpecialistResponse:
-        # This method remains unchanged
         if not self.text_analyzer_llm.available:
-            return SpecialistResponse(
-                task_id=task.task_id,
-                result="no_significant_event",
-                confidence=0.0,
-                details={"error": "Ollama text analyzer not available."}
-            )
-
+            return SpecialistResponse(task_id=task.task_id, result="no_significant_event", confidence=0.0, details={"error": "Ollama text analyzer not available."})
         start_char = int(len(full_transcript) * (task.time_range[0] / task.context.get("video_duration", 1)))
         end_char = int(len(full_transcript) * (task.time_range[1] / task.context.get("video_duration", 1)))
         text_segment = full_transcript[start_char:end_char]
-
         if not text_segment.strip():
-            return SpecialistResponse(
-                task_id=task.task_id,
-                result="no_significant_event",
-                confidence=1.0
-            )
-
+            return SpecialistResponse(task_id=task.task_id, result="no_significant_event", confidence=1.0)
         prompt = (
-            "You are a content moderator for gaming videos. Your task is to classify a short text segment from a player's speech. "
-            "The player is talking while playing a video game.\n\n"
-            "Classify the following text into one of three categories:\n"
-            "1. 'wild': Contains inappropriate jokes, sexual humor, standout profanity, over-dramatic reactions, or general outrageousness.\n"
-            "2. 'awkward': Contains social cringe, conversational mismatches, non-sequiturs, or logically inconsistent replies.\n"
-            "3. 'normal': Standard gameplay commentary, conversation, or reactions.\n\n"
-            f"Text Segment to Analyze: \"{text_segment}\"\n\n"
-            "Respond with ONLY the classification word ('wild', 'awkward', or 'normal').\n\n"
-            "Classification:"
+            "You are a content moderator for gaming videos. Classify the following text from a player's speech into 'wild', 'awkward', or 'normal'.\n"
+            "'wild': Outrageousness, standout profanity, sexual humor, over-dramatic reactions.\n"
+            "'awkward': Social cringe, conversational mismatches, non-sequiturs.\n"
+            "'normal': Standard gameplay commentary.\n\n"
+            f"Text Segment: \"{text_segment}\"\n\n"
+            "Respond with ONLY the classification word.\nClassification:"
         )
         try:
             classification = self.text_analyzer_llm.generate(prompt)
-
             if classification and "wild" in classification.lower():
                 return SpecialistResponse(
                     task_id=task.task_id,
                     result="wild_content_detected",
                     confidence=0.85,
-                    recommended_action="zoom_to_cam"
+                    recommended_action="zoom_to_cam_reaction"
                 )
             elif classification and "awkward" in classification.lower():
                 return SpecialistResponse(
@@ -77,57 +56,53 @@ class SpecialistManager:
                     recommended_action="zoom_out"
                 )
             else:
-                return SpecialistResponse(
-                    task_id=task.task_id,
-                    result="no_significant_event",
-                    confidence=0.9
-                )
+                return SpecialistResponse(task_id=task.task_id, result="no_significant_event", confidence=0.9)
         except Exception as e:
             self.log_func(f"ERROR during text analysis: {e}")
-            return SpecialistResponse(
-                task_id=task.task_id,
-                result="no_significant_event",
-                confidence=0.0,
-                details={"error": str(e)}
-            )
+            return SpecialistResponse(task_id=task.task_id, result="no_significant_event", confidence=0.0, details={"error": str(e)})
 
     def _analyze_audio_event(self, task: DirectorTask) -> SpecialistResponse:
-        """
-        Analyzes an audio event to determine if it's a dramatic moment.
-        """
         event_context = task.context
-        
-        # --- IMPLEMENTED LOGIC ---
-        # A "dramatic moment" is defined as a high-energy audio event.
-        # We use the 'tier' and 'energy' from the onomatopoeia detection phase.
-        is_major_tier = event_context.get('tier') == 'major'
-        is_high_energy = event_context.get('energy', 0) > 0.7
-
-        if is_major_tier or is_high_energy:
+        if event_context.get('tier') == 'major' or event_context.get('energy', 0) > 0.7:
             self.log_func(f"Dramatic moment detected at {task.time_range[0]:.2f}s (Tier: {event_context.get('tier')}, Energy: {event_context.get('energy', 0):.2f})")
             return SpecialistResponse(
                 task_id=task.task_id,
                 result="dramatic_moment_detected",
-                confidence=0.9, # High confidence for these events
+                confidence=0.9,
                 recommended_action="zoom_to_game"
             )
         else:
-            return SpecialistResponse(
-                task_id=task.task_id,
-                result="no_significant_event",
-                confidence=1.0
-            )
+            return SpecialistResponse(task_id=task.task_id, result="no_significant_event", confidence=1.0)
 
-    def _analyze_visual_context(self, task: DirectorTask) -> SpecialistResponse:
-        """
-        Analyzes visual data to provide context for an event.
-        (Placeholder for future implementation)
-        """
-        self.log_func(f"Placeholder: Analyzing visual context at {task.time_range[0]:.2f}s")
-        
-        return SpecialistResponse(
-            task_id=task.task_id,
-            result="no_significant_event",
-            confidence=1.0,
-            details={"status": "Not implemented"}
-        )
+    def _analyze_visual_context(self, task: DirectorTask, video_analysis_map: Dict[float, Dict]) -> SpecialistResponse:
+        self.log_func(f"Re-analyzing visual context at {task.time_range[0]:.2f}s using cached data...")
+        try:
+            event_time = task.time_range[0]
+            closest_time = min(video_analysis_map.keys(), key=lambda t: abs(t - event_time))
+            analysis = video_analysis_map.get(closest_time)
+            if not analysis:
+                return SpecialistResponse(task_id=task.task_id, result="no_significant_event", confidence=0.0, details={"error": "No cached vision analysis found for this timestamp."})
+            caption = analysis.get('video_caption', '')
+            if not caption:
+                return SpecialistResponse(task_id=task.task_id, result="no_significant_event", confidence=0.0, details={"error": "Cached vision analysis has no caption."})
+            dramatic_keywords = ["shoot", "shot", "explode", "crash", "attack", "fight", "hit", "punch", "kick"]
+            if any(keyword in caption.lower() for keyword in dramatic_keywords):
+                self.log_func(f"  - Cached visual analysis confirms dramatic moment: '{caption}'")
+                return SpecialistResponse(
+                    task_id=task.task_id,
+                    result="dramatic_moment_visual",
+                    confidence=0.95,
+                    recommended_action="zoom_to_game",
+                    details={"caption": caption}
+                )
+            else:
+                 self.log_func(f"  - Cached visual analysis shows normal gameplay: '{caption}'")
+                 return SpecialistResponse(
+                    task_id=task.task_id,
+                    result="no_significant_event",
+                    confidence=0.9,
+                    details={"caption": caption}
+                )
+        except Exception as e:
+            self.log_func(f"ERROR during cached visual analysis: {e}")
+            return SpecialistResponse(task_id=task.task_id, result="no_significant_event", confidence=0.0, details={"error": str(e)})

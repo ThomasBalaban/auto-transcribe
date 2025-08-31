@@ -12,28 +12,24 @@ from ai_director.master_director import MasterDirector
 from ai_director.video_editor import VideoEditor
 from video_utils import get_video_duration
 
-
 class VideoProcessor:
     @staticmethod
     def process_single_video(
         input_file: str,
         output_file: str,
         animation_type: str,
-        detailed_logs: bool, # New parameter
+        detailed_logs: bool,
         log_func
     ):
-        """
-        Main orchestrator for processing a single video.
-        The workflow is now corrected: AI edits are applied BEFORE subtitles.
-        """
         temp_dir = tempfile.gettempdir()
         onomatopoeia_subtitle_path = None
         mic_subtitle_path = None
         desktop_subtitle_path = None
         onomatopoeia_events = []
+        video_analysis_map = {} # To store the vision analysis
         mic_transcriptions_list = []
         mic_subtitle_path_srt = None
-        edited_video_path = None # Path for the AI-edited video
+        edited_video_path = None
 
         try:
             log_func("="*60)
@@ -47,12 +43,16 @@ class VideoProcessor:
             detector = OnomatopoeiaDetector(log_func=log_func)
             subtitle_ext = '.ass' if animation_type != "Static" else '.srt'
             onomatopoeia_subtitle_path = os.path.join(temp_dir, f"{os.path.basename(input_file)}_ono{subtitle_ext}")
-            success, onomatopoeia_events = detector.create_subtitle_file(
+            
+            # Now captures the video_analysis_map
+            success, onomatopoeia_events, video_analysis_map = detector.create_subtitle_file(
                 input_path=input_file,
                 output_path=onomatopoeia_subtitle_path,
                 animation_type=animation_type
             )
-            if not success:
+            if success:
+                 log_func(f"Vision analysis captured for {len(video_analysis_map)} events.")
+            else:
                 log_func("WARNING: Onomatopoeia detection failed or produced no events.")
                 onomatopoeia_subtitle_path = None
             
@@ -62,6 +62,7 @@ class VideoProcessor:
             log_func("INFO: Resources released.")
 
             # --- 2. DIALOGUE TRANSCRIPTION ---
+            # This phase remains the same
             log_func("\n--- PHASE 2: Dialogue Transcription ---")
             mic_audio_path = os.path.join(temp_dir, f"{os.path.basename(input_file)}_mic.wav")
             if core.transcriber.convert_to_audio(input_file, mic_audio_path, track_index="a:1"):
@@ -70,31 +71,26 @@ class VideoProcessor:
                 convert_to_srt("\n".join(mic_transcriptions_list), mic_subtitle_path_srt, input_file, log_func, is_mic_track=True)
                 mic_subtitle_path = mic_subtitle_path_srt.replace(".srt", ".ass")
                 os.remove(mic_audio_path)
-            else:
-                log_func("ERROR: Failed to extract microphone audio. Skipping.")
-
             desktop_audio_path = os.path.join(temp_dir, f"{os.path.basename(input_file)}_desktop.wav")
             if core.transcriber.convert_to_audio(input_file, desktop_audio_path, track_index="a:2"):
                 desktop_transcriptions = core.transcriber.transcribe_audio("large", "cpu", desktop_audio_path, True, log_func, "English", "Track 3 (Desktop)")
                 desktop_subtitle_path = os.path.join(temp_dir, f"{os.path.basename(input_file)}_desktop.srt")
                 convert_to_srt("\n".join(desktop_transcriptions), desktop_subtitle_path, input_file, log_func)
                 os.remove(desktop_audio_path)
-            else:
-                log_func("ERROR: Failed to extract desktop audio. Skipping.")
 
-            # --- 3. AI DIRECTOR ANALYSIS & EDITING (NEW ORDER) ---
+            # --- 3. AI DIRECTOR ANALYSIS & EDITING ---
             log_func("\n--- PHASE 3: AI Director Editing ---")
-            director = MasterDirector(log_func=log_func, detailed_logs=detailed_logs) # Pass the flag
-            audio_events_for_director = onomatopoeia_events
+            director = MasterDirector(log_func=log_func, detailed_logs=detailed_logs)
             
             decision_timeline = director.analyze_video_and_create_timeline(
+                video_path=input_file,
                 video_duration=video_duration,
                 mic_transcription=mic_transcriptions_list,
-                onomatopoeia_events=onomatopoeia_events,
-                audio_events=audio_events_for_director
+                audio_events=onomatopoeia_events, # Use onomatopoeia events as audio triggers
+                video_analysis_map=video_analysis_map # Pass the cached analysis
             )
 
-            video_to_subtitle = input_file # By default, subtitle the original video
+            video_to_subtitle = input_file
             if decision_timeline:
                 editor = VideoEditor(log_func=log_func)
                 edited_video_path = os.path.join(temp_dir, f"{os.path.basename(input_file)}_edited.mp4")
@@ -103,16 +99,16 @@ class VideoProcessor:
                     output_video=edited_video_path,
                     timeline=decision_timeline
                 )
-                video_to_subtitle = edited_video_path # If edits were made, subtitle the edited video
+                video_to_subtitle = edited_video_path
                 log_func(f"✅ AI Director edits applied. Intermediate video created: {edited_video_path}")
             else:
                 log_func("No AI Director edits were made. Proceeding with original video.")
 
-            # --- 4. EMBED SUBTITLES (NEW ORDER) ---
+            # --- 4. EMBED SUBTITLES ---
             log_func("\n--- PHASE 4: Embedding All Subtitles ---")
             embed_subtitles(
-                input_video=video_to_subtitle, # Use the (potentially) edited video
-                output_video=output_file, # Create the final output file
+                input_video=video_to_subtitle,
+                output_video=output_file,
                 track2_srt=mic_subtitle_path,
                 track3_srt=desktop_subtitle_path,
                 onomatopoeia_srt=onomatopoeia_subtitle_path,

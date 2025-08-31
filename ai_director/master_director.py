@@ -1,90 +1,50 @@
-# ai_director/master_director.py - UPDATED
+# ai_director/master_director.py - FINAL VERSION
 from typing import List, Dict, Tuple
 from ai_director.data_models import TimelineEvent, DirectorTask
 from ai_director.specialists import SpecialistManager
-from utils.timestamp_processor import parse_timestamp_line
 import numpy as np
 
 class MasterDirector:
     """Orchestrates the AI-driven video editing process."""
 
-    def __init__(self, log_func=None, detailed_logs=False): # New parameter
+    def __init__(self, log_func=None, detailed_logs=False):
         self.log_func = log_func or print
         self.specialists = SpecialistManager(log_func=self.log_func)
-        self.detailed_logs = detailed_logs # Store the setting
+        self.detailed_logs = detailed_logs
         self.log_func("👑 AI Master Director initialized.")
 
     def analyze_video_and_create_timeline(
         self,
+        video_path: str,
         video_duration: float,
         mic_transcription: List[str],
-        onomatopoeia_events: List[Dict],
-        audio_events: List[Dict]
+        audio_events: List[Dict],
+        video_analysis_map: Dict[float, Dict]
     ) -> List[TimelineEvent]:
-        """
-        Main orchestration method. Analyzes all data and produces a final
-        decision timeline for the video editor.
-        """
         self.log_func("--- AI Director: Starting Full Analysis ---")
-
-        context_map = self._full_scan_analysis(video_duration, mic_transcription, onomatopoeia_events)
-        self.log_func(f"Context map created with {len(context_map)} distinct periods.")
-
-        tasks = self._event_driven_analysis(video_duration, mic_transcription, audio_events, context_map)
+        tasks = self._event_driven_analysis(video_duration, audio_events)
         self.log_func(f"Generated {len(tasks)} tasks for specialists.")
-
         full_transcript_text = " ".join([line.split(":", 1)[1] for line in mic_transcription if ":" in line])
-        responses = [self.specialists.dispatch_task(task, full_transcript_text) for task in tasks]
-
+        responses = [self.specialists.dispatch_task(task, full_transcript_text, video_path, video_analysis_map) for task in tasks]
         timeline = self._resolve_conflicts_and_build_timeline(responses, tasks)
         self.log_func(f"✅ AI Director analysis complete. Generated {len(timeline)} timeline events.")
-
         return timeline
-
-    def _full_scan_analysis(
-        self,
-        video_duration: float,
-        mic_transcription: List[str],
-        onomatopoeia_events: List[Dict]
-    ) -> Dict[str, any]:
-        """
-        Performs a high-level analysis of the entire video to create a
-        contextual map of energy and activity. (Placeholder logic)
-        """
-        return {"energy": "mixed"}
 
     def _event_driven_analysis(
         self,
         video_duration: float,
-        mic_transcription: List[str],
-        audio_events: List[Dict],
-        context_map: Dict[str, any]
+        audio_events: List[Dict]
     ) -> List[DirectorTask]:
-        """
-        Generates analysis tasks based on chronological events.
-        """
         tasks = []
         window_size = 12.0
         step_size = 6.0
-
         for start_time in np.arange(0, video_duration - window_size, step_size):
-            end_time = start_time + window_size
-            tasks.append(DirectorTask(
-                task_type="analyze_text_content",
-                time_range=(start_time, end_time),
-                priority="medium",
-                context={"video_duration": video_duration}
-            ))
-            
+            tasks.append(DirectorTask(task_type="analyze_text_content", time_range=(start_time, start_time + window_size), priority="medium", context={"video_duration": video_duration}))
         for event in audio_events:
             if event.get('tier') == 'major' or event.get('energy', 0) > 0.7:
-                tasks.append(DirectorTask(
-                    task_type="analyze_audio_event",
-                    time_range=(event['start_time'], event['end_time']),
-                    priority="high",
-                    context=event
-                ))
-
+                event_time_range = (event['start_time'], event['end_time'])
+                tasks.append(DirectorTask(task_type="analyze_audio_event", time_range=event_time_range, priority="high", context=event))
+                tasks.append(DirectorTask(task_type="analyze_visual_context", time_range=event_time_range, priority="high", context=event))
         return tasks
 
     def _resolve_conflicts_and_build_timeline(
@@ -92,69 +52,64 @@ class MasterDirector:
         responses: List,
         tasks: List[DirectorTask]
     ) -> List[TimelineEvent]:
-        """
-        Resolves overlapping recommendations and builds the final timeline.
-        Now includes detailed logging.
-        """
         events = []
-        if self.detailed_logs:
-            self.log_func("\n--- AI Director: Specialist Responses ---")
-            
+        if self.detailed_logs: self.log_func("\n--- AI Director: Specialist Responses ---")
         for response, task in zip(responses, tasks):
             if response.result != "no_significant_event" and response.recommended_action:
-                event = TimelineEvent(
-                    timestamp=task.time_range[0],
-                    action=response.recommended_action,
-                    duration=3.0,
-                    reason=response.result,
-                    confidence=response.confidence,
-                    source_task_id=response.task_id
-                )
+                duration = 2.0 if response.recommended_action == "zoom_to_cam_reaction" else 3.0
+                event = TimelineEvent(timestamp=task.time_range[0], action=response.recommended_action, duration=duration, reason=response.result, confidence=response.confidence, source_task_id=response.task_id)
                 events.append(event)
-                if self.detailed_logs:
-                    self.log_func(f"  - Event Generated: {event.action} at {event.timestamp:.2f}s (Reason: {event.reason}, Conf: {event.confidence:.2f})")
-
-        if not events:
-            if self.detailed_logs:
-                self.log_func("  - No significant events generated by specialists.")
-            return []
-
-        events.sort(key=lambda e: e.timestamp)
+                if self.detailed_logs: self.log_func(f"  - Event Generated: {event.action} at {event.timestamp:.2f}s (Duration: {event.duration:.1f}s, Reason: {event.reason})")
         
-        if self.detailed_logs:
-            self.log_func("\n--- AI Director: Conflict Resolution ---")
-
         if not events:
+            if self.detailed_logs: self.log_func("  - No significant events generated by specialists.")
             return []
-            
-        final_timeline = [events[0]]
-        if self.detailed_logs:
-            self.log_func(f"  - Initial Event: Keeping {final_timeline[0].action} at {final_timeline[0].timestamp:.2f}s.")
 
-        for current_event in events[1:]:
-            last_event = final_timeline[-1]
+        priority_map = {"dramatic_moment_visual": 3, "wild_content_detected": 2, "dramatic_moment_detected": 1, "awkward_content_detected": 1}
+        events.sort(key=lambda e: (e.timestamp, -priority_map.get(e.reason, 0)))
+
+        if self.detailed_logs: self.log_func("\n--- AI Director: Conflict Resolution & Sequencing ---")
+        
+        final_timeline = []
+        i = 0
+        while i < len(events):
+            current_event = events[i]
             
-            if current_event.timestamp < last_event.timestamp + last_event.duration:
-                priority_map = {"wild_content_detected": 2, "awkward_content_detected": 1, "dramatic_moment_detected": 1}
+            if (current_event.reason == "dramatic_moment_visual" and (i + 1) < len(events)):
+                next_event = events[i+1]
+                if (next_event.action == "zoom_to_cam_reaction" and 
+                    next_event.timestamp > current_event.timestamp and 
+                    next_event.timestamp < current_event.timestamp + current_event.duration):
+                    
+                    if self.detailed_logs:
+                        self.log_func(f"  - Sequence Detected at {current_event.timestamp:.2f}s:")
+                    
+                    current_event.duration = next_event.timestamp - current_event.timestamp
+                    final_timeline.append(current_event)
+                    final_timeline.append(next_event)
+                    
+                    if self.detailed_logs:
+                        self.log_func(f"    - Resolution: Creating 'Action > Reaction' sequence. Game shot is now {current_event.duration:.2f}s long.")
+                    
+                    i += 2
+                    continue
+
+            if not final_timeline or current_event.timestamp >= final_timeline[-1].timestamp + final_timeline[-1].duration:
+                if self.detailed_logs: self.log_func(f"  - No Conflict: Keeping {current_event.action} at {current_event.timestamp:.2f}s.")
+                final_timeline.append(current_event)
+            else:
+                last_event = final_timeline[-1]
                 current_priority = priority_map.get(current_event.reason, 0)
                 last_priority = priority_map.get(last_event.reason, 0)
-                
-                log_prefix = f"  - Conflict at {current_event.timestamp:.2f}s:"
-                
+                if self.detailed_logs:
+                    self.log_func(f"  - Conflict Detected:")
+                    self.log_func(f"    - Existing: {last_event.action} at {last_event.timestamp:.2f}s (Reason: {last_event.reason}, Priority: {last_priority})")
+                    self.log_func(f"    - New:      {current_event.action} at {current_event.timestamp:.2f}s (Reason: {current_event.reason}, Priority: {current_priority})")
                 if current_priority > last_priority:
-                    if self.detailed_logs:
-                        self.log_func(f"{log_prefix} Replacing '{last_event.action}' with '{current_event.action}' (Higher Priority).")
-                    final_timeline[-1] = current_event
-                elif current_priority == last_priority and current_event.confidence > last_event.confidence:
-                    if self.detailed_logs:
-                        self.log_func(f"{log_prefix} Replacing '{last_event.action}' with '{current_event.action}' (Higher Confidence).")
+                    if self.detailed_logs: self.log_func(f"    - Resolution: Replacing with new event (Higher Priority).")
                     final_timeline[-1] = current_event
                 else:
-                    if self.detailed_logs:
-                        self.log_func(f"{log_prefix} Ignoring '{current_event.action}' (Lower Priority/Confidence).")
-            else:
-                if self.detailed_logs:
-                    self.log_func(f"  - No Conflict: Keeping {current_event.action} at {current_event.timestamp:.2f}s.")
-                final_timeline.append(current_event)
+                    if self.detailed_logs: self.log_func(f"    - Resolution: Keeping existing event.")
+            i += 1
                 
         return final_timeline
