@@ -1,5 +1,5 @@
 # ai_director/specialists.py
-from typing import Dict
+from typing import Dict, Optional
 from ai_director.data_models import DirectorTask, SpecialistResponse
 from llm.ollama_integration import OllamaLLM
 from llm.gemini_vision_analyzer import GeminiVisionAnalyzer
@@ -46,7 +46,8 @@ class SpecialistManager:
                     task_id=task.task_id,
                     result="wild_content_detected",
                     confidence=0.85,
-                    recommended_action="zoom_to_cam_reaction"
+                    recommended_action="zoom_to_cam_reaction",
+                    details={"text_segment": text_segment}
                 )
             elif classification and "awkward" in classification.lower():
                 return SpecialistResponse(
@@ -106,3 +107,31 @@ class SpecialistManager:
         except Exception as e:
             self.log_func(f"ERROR during cached visual analysis: {e}")
             return SpecialistResponse(task_id=task.task_id, result="no_significant_event", confidence=0.0, details={"error": str(e)})
+
+    def decide_editorial_priority(self, game_event_details: Dict, player_event_details: Dict) -> Optional[str]:
+        """Uses an LLM to decide which of two conflicting events is more important."""
+        if not self.text_analyzer_llm.available:
+            return None # Fallback to default priority if LLM is down
+
+        prompt = (
+            "You are an expert video editor for gaming content. You must decide which of two moments is more important to show on screen.\n\n"
+            "**CONTEXT:**\n"
+            f"- **Game Event:** {game_event_details.get('caption', 'No description')}\n"
+            f"- **Player Reaction:** {player_event_details.get('text_segment', 'No transcription')}\n\n"
+            "**ANALYSIS:**\n"
+            "The game event seems to be a significant, dramatic moment (e.g., a major plot point, a difficult combat encounter). The player's reaction is a typical, potentially generic, exclamation.\n"
+            "For a high-quality gaming video, which is more editorially important to show?\n\n"
+            "**DECISION:**\n"
+            "Respond with ONLY 'game' or 'player'.\n"
+            "Decision:"
+        )
+
+        try:
+            decision = self.text_analyzer_llm.generate(prompt)
+            if decision and decision.lower() in ['game', 'player']:
+                self.log_func(f"  - Editorial Specialist decided: '{decision.lower()}' is more important.")
+                return decision.lower()
+            return None
+        except Exception as e:
+            self.log_func(f"ERROR during editorial decision: {e}")
+            return None
