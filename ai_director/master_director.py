@@ -1,4 +1,4 @@
-# ai_director/master_director.py - FINAL VERSION
+# ai_director/master_director.py
 from typing import List, Dict, Tuple
 from ai_director.data_models import TimelineEvent, DirectorTask
 from ai_director.specialists import SpecialistManager

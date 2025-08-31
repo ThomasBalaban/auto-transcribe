@@ -1,4 +1,4 @@
-# ai_director/video_editor.py - FINAL CORRECTED VERSION
+# ai_director/video_editor.py
 import subprocess
 import os
 from typing import List
