@@ -66,22 +66,20 @@ class VideoEditor:
         self._run_ffmpeg(input_video, output_video, full_filtergraph, last_stream)
 
     def _create_simple_zoom_out(self, input_stream: str, output_stream: str, event: TimelineEvent) -> str:
-        """Create zoom out with just 3 steps to prevent freezing."""
+        """Create zoom out with more frames for smooth animation."""
         start_time = event.timestamp
         end_time = event.timestamp + event.duration
         duration = event.duration
         
-        # Use only 3 steps for maximum reliability
-        step_duration = duration / 3
+        # Increase steps for smoother animation
+        num_steps = min(max(int(duration * 6), 4), 18)  # 6 steps per second, max 18
+        step_duration = duration / num_steps
         
         start_zoom = 0.8
         zoom_out_rate = 0.02 * duration
         end_zoom = max(start_zoom - zoom_out_rate, 0.4)
         
-        # Calculate the 3 zoom levels
-        zoom_1 = start_zoom
-        zoom_2 = start_zoom + (end_zoom - start_zoom) * 0.5
-        zoom_3 = end_zoom
+        self.log_func(f"Creating smooth zoom out: {num_steps} steps over {duration:.1f}s")
         
         effects = []
         
@@ -91,111 +89,121 @@ class VideoEditor:
             f"'between(t,{start_time},{end_time})'[bg_applied]"
         )
         
-        # Create the 3 zoom levels
-        effects.append(f"[0:v]scale=iw*{zoom_1:.3f}:ih*{zoom_1:.3f}[zoom_1]")
-        effects.append(f"[0:v]scale=iw*{zoom_2:.3f}:ih*{zoom_2:.3f}[zoom_2]")
-        effects.append(f"[0:v]scale=iw*{zoom_3:.3f}:ih*{zoom_3:.3f}[zoom_3]")
+        # Create all zoom levels
+        for step in range(num_steps):
+            progress = step / (num_steps - 1) if num_steps > 1 else 0
+            scale = start_zoom + (end_zoom - start_zoom) * progress
+            effects.append(f"[0:v]scale=iw*{scale:.4f}:ih*{scale:.4f}[zoom_{step}]")
         
-        # Apply each zoom level at its time
-        effects.append(
-            f"[bg_applied][zoom_1]overlay=(W-w)/2:(H-h)/2:enable="
-            f"'between(t,{start_time:.3f},{start_time + step_duration:.3f})'[step1]"
-        )
-        effects.append(
-            f"[step1][zoom_2]overlay=(W-w)/2:(H-h)/2:enable="
-            f"'between(t,{start_time + step_duration:.3f},{start_time + 2*step_duration:.3f})'[step2]"
-        )
-        effects.append(
-            f"[step2][zoom_3]overlay=(W-w)/2:(H-h)/2:enable="
-            f"'between(t,{start_time + 2*step_duration:.3f},{end_time:.3f})'"
-            f"{output_stream}"
-        )
+        # Apply each zoom level sequentially
+        last_stream = "[bg_applied]"
+        for step in range(num_steps):
+            step_start = start_time + (step * step_duration)
+            step_end = start_time + ((step + 1) * step_duration) if step < num_steps - 1 else end_time
+            next_stream = f"[zoom_step_{step}]" if step < num_steps - 1 else output_stream
+            
+            effects.append(
+                f"{last_stream}[zoom_{step}]overlay=(W-w)/2:(H-h)/2:enable="
+                f"'between(t,{step_start:.4f},{step_end:.4f})'{next_stream}"
+            )
+            
+            last_stream = next_stream
         
         return ";".join(effects)
 
     def _create_simple_cam_zoom(self, input_stream: str, output_stream: str, event: TimelineEvent) -> str:
-        """Create simple camera zoom with 3 steps."""
+        """Create camera zoom with more frames for smooth animation."""
         start_time = event.timestamp
         end_time = event.timestamp + event.duration
         duration = event.duration
+        
+        # Increase steps for smoother animation
+        num_steps = min(max(int(duration * 5), 3), 15)  # 5 steps per second, max 15
+        step_duration = duration / num_steps
         
         # Random zoom direction
         zoom_direction = random.choice(['in', 'out'])
         zoom_rate = 0.02 * duration
         
         if zoom_direction == 'in':
-            scale_1, scale_2, scale_3 = 1.0, 1.0 - zoom_rate*0.5, 1.0 - zoom_rate
+            start_scale, end_scale = 1.0, 1.0 - zoom_rate
         else:
-            scale_1, scale_2, scale_3 = 1.0 - zoom_rate, 1.0 - zoom_rate*0.5, 1.0
+            start_scale, end_scale = 1.0 - zoom_rate, 1.0
         
-        step_duration = duration / 3
+        self.log_func(f"Camera zoom {zoom_direction.upper()}: {start_scale:.3f} → {end_scale:.3f} over {duration:.1f}s ({num_steps} steps)")
         
         effects = []
         
-        # Create the 3 crop levels
-        effects.append(f"[0:v]crop=(iw/2)*{scale_1:.3f}:(ih/2)*{scale_1:.3f}:0:0,scale=1080:1920[crop_1]")
-        effects.append(f"[0:v]crop=(iw/2)*{scale_2:.3f}:(ih/2)*{scale_2:.3f}:0:0,scale=1080:1920[crop_2]")
-        effects.append(f"[0:v]crop=(iw/2)*{scale_3:.3f}:(ih/2)*{scale_3:.3f}:0:0,scale=1080:1920[crop_3]")
+        # Create all crop levels
+        for step in range(num_steps):
+            progress = step / (num_steps - 1) if num_steps > 1 else 0
+            current_scale = start_scale + (end_scale - start_scale) * progress
+            effects.append(f"[0:v]crop=(iw/2)*{current_scale:.4f}:(ih/2)*{current_scale:.4f}:0:0,scale=1080:1920[crop_{step}]")
         
-        # Apply each crop level
-        effects.append(
-            f"{input_stream}[crop_1]overlay=0:0:enable="
-            f"'between(t,{start_time:.3f},{start_time + step_duration:.3f})'[cam_step1]"
-        )
-        effects.append(
-            f"[cam_step1][crop_2]overlay=0:0:enable="
-            f"'between(t,{start_time + step_duration:.3f},{start_time + 2*step_duration:.3f})'[cam_step2]"
-        )
-        effects.append(
-            f"[cam_step2][crop_3]overlay=0:0:enable="
-            f"'between(t,{start_time + 2*step_duration:.3f},{end_time:.3f})'"
-            f"{output_stream}"
-        )
+        # Apply each crop level sequentially
+        last_stream = input_stream
+        for step in range(num_steps):
+            step_start = start_time + (step * step_duration)
+            step_end = start_time + ((step + 1) * step_duration) if step < num_steps - 1 else end_time
+            next_stream = f"[cam_step_{step}]" if step < num_steps - 1 else output_stream
+            
+            effects.append(
+                f"{last_stream}[crop_{step}]overlay=0:0:enable="
+                f"'between(t,{step_start:.4f},{step_end:.4f})'{next_stream}"
+            )
+            
+            last_stream = next_stream
         
         return ";".join(effects)
 
     def _create_simple_game_zoom(self, input_stream: str, output_stream: str, event: TimelineEvent) -> str:
-        """Create simple game zoom with 3 steps."""
+        """Create game zoom with more frames for smooth animation."""
         start_time = event.timestamp
         end_time = event.timestamp + event.duration
         duration = event.duration
+        
+        # Increase steps for smoother animation
+        num_steps = min(max(int(duration * 5), 3), 15)  # 5 steps per second, max 15
+        step_duration = duration / num_steps
         
         # Random zoom direction
         zoom_direction = random.choice(['in', 'out'])
         zoom_rate = 0.02 * duration
         
         if zoom_direction == 'in':
-            scale_1, scale_2, scale_3 = 1.0, 1.0 - zoom_rate*0.5, 1.0 - zoom_rate
+            start_scale, end_scale = 1.0, 1.0 - zoom_rate
         else:
-            scale_1, scale_2, scale_3 = 1.0 - zoom_rate, 1.0 - zoom_rate*0.5, 1.0
+            start_scale, end_scale = 1.0 - zoom_rate, 1.0
         
-        step_duration = duration / 3
+        self.log_func(f"Game zoom {zoom_direction.upper()}: {start_scale:.3f} → {end_scale:.3f} over {duration:.1f}s ({num_steps} steps)")
         
         effects = []
         
-        # Create the 3 crop levels for game area
-        for i, scale in enumerate([scale_1, scale_2, scale_3], 1):
-            crop_w = f"(iw/1.5)*{scale:.3f}"
-            crop_h = f"(ih/1.5)*{scale:.3f}"
-            crop_x = f"(iw/6)+((iw/1.5)*(1-{scale:.3f})/2)"
-            crop_y = f"(ih/6)+((ih/1.5)*(1-{scale:.3f})/2)"
+        # Create all crop levels for game area
+        for step in range(num_steps):
+            progress = step / (num_steps - 1) if num_steps > 1 else 0
+            current_scale = start_scale + (end_scale - start_scale) * progress
             
-            effects.append(f"[0:v]crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale=1080:1920[game_crop_{i}]")
+            crop_w = f"(iw/1.5)*{current_scale:.4f}"
+            crop_h = f"(ih/1.5)*{current_scale:.4f}"
+            crop_x = f"(iw/6)+((iw/1.5)*(1-{current_scale:.4f})/2)"
+            crop_y = f"(ih/6)+((ih/1.5)*(1-{current_scale:.4f})/2)"
+            
+            effects.append(f"[0:v]crop={crop_w}:{crop_h}:{crop_x}:{crop_y},scale=1080:1920[game_crop_{step}]")
         
-        # Apply each crop level
-        effects.append(
-            f"{input_stream}[game_crop_1]overlay=0:0:enable="
-            f"'between(t,{start_time:.3f},{start_time + step_duration:.3f})'[game_step1]"
-        )
-        effects.append(
-            f"[game_step1][game_crop_2]overlay=0:0:enable="
-            f"'between(t,{start_time + step_duration:.3f},{start_time + 2*step_duration:.3f})'[game_step2]"
-        )
-        effects.append(
-            f"[game_step2][game_crop_3]overlay=0:0:enable="
-            f"'between(t,{start_time + 2*step_duration:.3f},{end_time:.3f})'"
-            f"{output_stream}"
-        )
+        # Apply each crop level sequentially
+        last_stream = input_stream
+        for step in range(num_steps):
+            step_start = start_time + (step * step_duration)
+            step_end = start_time + ((step + 1) * step_duration) if step < num_steps - 1 else end_time
+            next_stream = f"[game_step_{step}]" if step < num_steps - 1 else output_stream
+            
+            effects.append(
+                f"{last_stream}[game_crop_{step}]overlay=0:0:enable="
+                f"'between(t,{step_start:.4f},{step_end:.4f})'{next_stream}"
+            )
+            
+            last_stream = next_stream
         
         return ";".join(effects)
 
