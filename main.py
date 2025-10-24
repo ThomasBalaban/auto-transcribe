@@ -2,7 +2,7 @@
 import os
 import threading
 import queue
-import customtkinter as ctk
+import customtkinter as ctk # type: ignore
 import traceback
 import json
 from tkinter import filedialog, messagebox
@@ -99,14 +99,14 @@ class DualSubtitleApp:
 
     def add_files(self):
         # This method remains unchanged
-        if len(self.input_files) >= 15:
-            messagebox.showwarning("Maximum Files Reached", "You can only process up to 15 files at once.")
+        if len(self.input_files) >= 30:
+            messagebox.showwarning("Maximum Files Reached", "You can only process up to 30 files at once.")
             return
         file_paths = filedialog.askopenfilenames(filetypes=[("Video files", "*.mp4 *.mkv *.avi")])
         if not file_paths:
             return
-        if len(self.input_files) + len(file_paths) > 15:
-            remaining = 15 - len(self.input_files)
+        if len(self.input_files) + len(file_paths) > 30:
+            remaining = 30 - len(self.input_files)
             messagebox.showwarning("Maximum Files Reached", f"You can only add {remaining} more file(s).")
             file_paths = file_paths[:remaining]
         for file_path in file_paths:
