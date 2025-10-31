@@ -17,7 +17,6 @@ class TitleDataExtractor:
         self,
         duration: float,
         mic_transcriptions: List[str],
-        onomatopoeia_events: List[Dict],
         timeline_events: List,
         video_analysis_map: Dict[float, Dict]
     ) -> Dict:
@@ -33,21 +32,12 @@ class TitleDataExtractor:
         
         self.log_func(f"🎯 Analyzing climax window: {climax_start:.1f}s - {duration:.1f}s")
         
-        # Extract components
+        # Extract components (no onomatopoeia)
         final_quotes = self._extract_final_quotes(mic_transcriptions, climax_start)
-        final_events = self._extract_final_events(
-            onomatopoeia_events, 
-            timeline_events, 
-            climax_start,
-            duration
-        )
+        final_events = self._extract_final_events(timeline_events, climax_start, duration)
         final_visuals = self._extract_final_visuals(video_analysis_map, climax_start)
         game_context = self._detect_game_context(video_analysis_map)
-        overall_tone = self._analyze_overall_tone(
-            onomatopoeia_events,
-            timeline_events,
-            mic_transcriptions
-        )
+        overall_tone = self._analyze_overall_tone(timeline_events, mic_transcriptions)
         
         return {
             'duration': duration,
@@ -57,7 +47,6 @@ class TitleDataExtractor:
             'final_visuals': final_visuals,
             'game_context': game_context,
             'overall_tone': overall_tone,
-            'total_events_count': len(onomatopoeia_events),
         }
 
     def _extract_final_quotes(
@@ -107,40 +96,15 @@ class TitleDataExtractor:
 
     def _extract_final_events(
         self,
-        onomatopoeia_events: List[Dict],
         timeline_events: List,
         climax_start: float,
         duration: float
     ) -> List[Dict]:
-        """Extract and score events from climax window."""
+        """Extract and score timeline events from climax window."""
         
         scored_events = []
         
-        # Score onomatopoeia events
-        for event in onomatopoeia_events:
-            event_time = event.get('start_time', 0)
-            
-            if event_time >= climax_start:
-                # Calculate title relevance score (position-weighted)
-                position_ratio = event_time / duration
-                position_weight = position_ratio ** 2
-                
-                # Boost for final 10%
-                if position_ratio > 0.90:
-                    position_weight *= 1.5
-                
-                energy = event.get('energy', 0.5)
-                score = energy * position_weight
-                
-                scored_events.append({
-                    'type': 'onomatopoeia',
-                    'word': event.get('word', 'UNKNOWN'),
-                    'timestamp': event_time,
-                    'energy': energy,
-                    'title_score': score
-                })
-        
-        # Score timeline events
+        # Score timeline events only
         for event in timeline_events:
             event_time = event.timestamp
             
@@ -166,6 +130,9 @@ class TitleDataExtractor:
         
         # Sort by score and return top 5
         scored_events.sort(key=lambda x: x['title_score'], reverse=True)
+        
+        self.log_func(f"📊 Climax events: {len(scored_events)} timeline decisions")
+        
         return scored_events[:5]
 
     def _extract_final_visuals(
@@ -225,7 +192,6 @@ class TitleDataExtractor:
 
     def _analyze_overall_tone(
         self,
-        onomatopoeia_events: List[Dict],
         timeline_events: List,
         mic_transcriptions: List[str]
     ) -> str:
@@ -242,12 +208,6 @@ class TitleDataExtractor:
             elif 'dramatic' in reason:
                 dramatic_count += 1
         
-        # Calculate average energy
-        if onomatopoeia_events:
-            avg_energy = sum(e.get('energy', 0) for e in onomatopoeia_events) / len(onomatopoeia_events)
-        else:
-            avg_energy = 0
-        
         # Count profanity/strong reactions in transcriptions
         strong_reaction_count = 0
         for line in mic_transcriptions:
@@ -258,7 +218,7 @@ class TitleDataExtractor:
         # Determine tone
         if wild_content_count > dramatic_count and strong_reaction_count > 5:
             tone = "funny/chaotic"
-        elif avg_energy > 0.7 or dramatic_count > 5:
+        elif dramatic_count > 5:
             tone = "intense/action-heavy"
         elif wild_content_count > 0:
             tone = "mixed/comedic"

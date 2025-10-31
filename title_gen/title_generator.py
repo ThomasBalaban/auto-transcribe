@@ -20,17 +20,15 @@ class TitleGenerator:
         self,
         video_duration: float,
         mic_transcriptions: List[str],
-        onomatopoeia_events: List[Dict],
         timeline_events: List,
         video_analysis_map: Dict[float, Dict],
     ) -> Optional[str]:
         """
         Main entry point for title generation.
-        
+
         Args:
             video_duration: Total video duration in seconds
             mic_transcriptions: List of transcription lines with timestamps
-            onomatopoeia_events: List of detected onomatopoeia events
             timeline_events: AI Director timeline decisions
             video_analysis_map: Map of timestamps to video analysis data
             
@@ -40,11 +38,10 @@ class TitleGenerator:
         try:
             self.log_func("\n🎬 Starting title generation...")
             
-            # Step 1: Prepare all data
+            # Step 1: Prepare all data (no onomatopoeia)
             title_data = self._prepare_title_data(
                 video_duration,
                 mic_transcriptions,
-                onomatopoeia_events,
                 timeline_events,
                 video_analysis_map
             )
@@ -73,11 +70,10 @@ class TitleGenerator:
         self,
         duration: float,
         mic_transcriptions: List[str],
-        onomatopoeia_events: List[Dict],
         timeline_events: List,
         video_analysis_map: Dict[float, Dict]
     ) -> Dict:
-        """Extract and package all relevant data for title generation."""
+        """Extract and package all relevant data for title generation (no onomatopoeia)."""
         
         from title_gen.title_data_extractor import TitleDataExtractor
         
@@ -86,7 +82,6 @@ class TitleGenerator:
         data = extractor.extract_title_components(
             duration=duration,
             mic_transcriptions=mic_transcriptions,
-            onomatopoeia_events=onomatopoeia_events,
             timeline_events=timeline_events,
             video_analysis_map=video_analysis_map
         )

@@ -17,15 +17,28 @@ class GeminiVisionAnalyzer:
         if not self.api_key or self.api_key == "YOUR_API_KEY_HERE":
             raise ValueError("Gemini API key not found or not set in config.json")
         genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        self.safety_settings = {
-            'HARM_CATEGORY_HARASSMENT': 'BLOCK_NONE',
-            'HARM_CATEGORY_HATE_SPEECH': 'BLOCK_NONE',
-            'HARM_CATEGORY_SEXUALLY_EXPLICIT': 'BLOCK_NONE',
-            'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE'
-        }
+        self.model = genai.GenerativeModel('models/gemini-2.5-flash')
+        
+        self.safety_settings = [
+            {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": "BLOCK_NONE",
+            },
+            {
+                "category": "HARM_CATEGORY_HATE_SPEECH",
+                "threshold": "BLOCK_NONE",
+            },
+            {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "threshold": "BLOCK_NONE",
+            },
+            {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                "threshold": "BLOCK_NONE",
+            },
+        ]
         self.num_frames_for_caption = 4
-        self.log_func("🎬 Gemini Vision analyzer initialized with model: gemini-1.5-flash-latest")
+        self.log_func("🎬 Gemini Vision analyzer initialized with model: gemini-2.5-flash")
 
     def extract_frames_from_video(self, video_path: str, start_time: float, duration: float) -> List[Image.Image]:
         """Extracts evenly spaced frames from a video segment."""
@@ -68,8 +81,17 @@ class GeminiVisionAnalyzer:
         ]
         prompt.extend(frames)
 
+        response = None
         try:
-            response = self.model.generate_content(prompt, safety_settings=self.safety_settings)
+            response = self.model.generate_content(
+                prompt, 
+                safety_settings=self.safety_settings
+            )
+            
+            # Check if response exists and has text
+            if not response or not hasattr(response, 'text') or not response.text:
+                self.log_func(f"💥 Gemini Vision returned empty or invalid response")
+                return analysis
             
             raw_text = response.text.strip().replace("```json", "").replace("```", "")
             parsed_json = json.loads(raw_text)
@@ -82,14 +104,16 @@ class GeminiVisionAnalyzer:
                 self.log_func(f"💧 Gemini Vision detected context: {analysis['scene_context']}")
 
             return analysis
-        except (json.JSONDecodeError, AttributeError, Exception) as e:
-            self.log_func(f"💥 Gemini Vision analysis error (or failed to parse JSON): {e}")
-            if hasattr(response, 'text'):
+        except json.JSONDecodeError as e:
+            self.log_func(f"💥 Gemini Vision JSON parsing error: {e}")
+            if response and hasattr(response, 'text') and response.text:
                 self.log_func(f"   Raw response was: {response.text}")
                 analysis["caption"] = response.text.strip()
             return analysis
+        except Exception as e:
+            self.log_func(f"💥 Gemini Vision analysis error: {e}")
+            return analysis
             
-    # === UPDATED METHOD: Now accepts events and returns a dictionary for perfect matching ===
     def analyze_video_at_timestamps(self, video_path: str, events: List[Dict], window_duration: float = 5.0) -> Dict[float, Dict]:
         """
         Orchestrates the analysis for multiple events and returns a analysis map.

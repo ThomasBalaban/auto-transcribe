@@ -57,63 +57,63 @@ class TitlePromptBuilder:
         
         prompt = f"""You are creating a YouTube title for a gaming clip. This is a raw, casual streaming moment.
 
-=== VIDEO INFORMATION ===
-Duration: {data['duration']:.1f} seconds
-Game/Context: {data['game_context']}
-Overall Tone: {data['overall_tone']}
-Action Intensity: {data['total_events_count']} major events detected
+        === VIDEO INFORMATION ===
+        Duration: {data['duration']:.1f} seconds
+        Game/Context: {data['game_context']}
+        Overall Tone: {data['overall_tone']}
 
-=== THE CLIMAX (Last 30% of video - THE PUNCHLINE) ===
-The clip was cut to END on this moment. This is what the title should focus on.
+        === THE CLIMAX (Last 30% of video - THE PUNCHLINE) ===
+        The clip was cut to END on this moment. This is what the title should focus on.
 
-{self._format_final_quotes_section(data['final_quotes'])}
+        {self._format_final_quotes_section(data['final_quotes'])}
 
-{self._format_final_visuals_section(data['final_visuals'])}
+        {self._format_final_visuals_section(data['final_visuals'])}
 
-{self._format_final_events_section(data['final_events'])}
+        {self._format_final_events_section(data['final_events'])}
 
-=== TITLE STYLE GUIDELINES ===
-Study these REAL examples from this creator to match their voice exactly:
+        === TITLE STYLE GUIDELINES ===
+        Study these REAL examples from this creator to match their voice exactly:
 
-REACTION-BASED (most common - ~40%):
-{self._format_examples('reaction_based')}
+        REACTION-BASED (most common - ~40%):
+        {self._format_examples('reaction_based')}
 
-DECLARATIVE/CAPS (high energy - ~25%):
-{self._format_examples('declarative')}
+        DECLARATIVE/CAPS (high energy - ~25%):
+        {self._format_examples('declarative')}
 
-REGRET/MISTAKE (~10%):
-{self._format_examples('regret_mistake')}
+        REGRET/MISTAKE (~10%):
+        {self._format_examples('regret_mistake')}
 
-CONFUSION/WTF (~10%):
-{self._format_examples('confusion_wtf')}
+        CONFUSION/WTF (~10%):
+        {self._format_examples('confusion_wtf')}
 
-KEY PATTERNS YOU MUST FOLLOW:
-1. Use parentheses for context: "(game name)" or "(descriptor)" - VERY COMMON
-2. Start with "I/We/Chat/They" about 60% of the time (personal voice)
-3. Strategic ALL CAPS for emotional peaks, casual lowercase otherwise
-4. Be SPECIFIC - reference exact moments from the data above, not generic descriptions
-5. 30-60 characters ideal (STRICT LIMIT)
-6. Focus on the ENDING/CLIMAX - that's the punchline of the clip
-7. Use emotional punctuation (!!!, ?!?!, :( ) when it fits naturally
-8. Raw and honest - not polished or overly clickbaity
-9. Match the creator's casual, reactive streaming voice
+        KEY PATTERNS YOU MUST FOLLOW:
+        1. Use parentheses for context: "(game name)" or "(descriptor)" - VERY COMMON
+        2. Start with "I/We/Chat/They" about 60% of the time (personal voice)
+        3. Strategic ALL CAPS for emotional peaks, casual lowercase otherwise
+        4. Be SPECIFIC - reference exact moments from the data above, not generic descriptions
+        5. 30-60 characters ideal (STRICT LIMIT)
+        6. Focus on the ENDING/CLIMAX - that's the punchline of the clip
+        7. Use emotional punctuation (!!!, ?!?!, :( ) when it fits naturally
+        8. Raw and honest - not polished or overly clickbaity
+        9. Match the creator's casual, reactive streaming voice
 
-CRITICAL: The title must feel like the creator naturally named it after clipping the moment.
+        CRITICAL: The title must feel like the creator naturally named it after clipping the moment.
 
-=== YOUR TASK ===
-Generate ONE title that:
-- Captures the final moment (the punchline that happens at the END)
-- Uses the exact quotes, actions, or visuals from the climax data above
-- Matches the casual, reactive voice from the examples
-- Feels authentic and natural
-- Is 30-60 characters (STRICT)
+        === YOUR TASK ===
+        Generate ONE title that:
+        - Captures the final moment (the punchline that happens at the END)
+        - Uses the exact quotes, actions, or visuals from the climax data above
+        - Matches the casual, reactive voice from the examples
+        - Feels authentic and natural
+        - Is 30-60 characters (STRICT)
 
-Think: "The best part happened at the end of this clip. What would I naturally call this moment?"
+        Think: "The best part happened at the end of this clip. What would I naturally call this moment?"
 
-OUTPUT ONLY THE TITLE - NO EXPLANATIONS, ALTERNATIVES, OR MARKDOWN.
-Title:"""
+        OUTPUT ONLY THE TITLE - NO EXPLANATIONS, ALTERNATIVES, OR MARKDOWN.
+        Title:"""
 
         return prompt
+
 
     def _format_final_quotes_section(self, quotes: List[Dict]) -> str:
         """Format the final quotes section of the prompt."""

@@ -11,15 +11,27 @@ class GeminiTextGenerator:
         self.log_func = log_func or print
         self.api_key = get_gemini_api_key()
         genai.configure(api_key=self.api_key)
-        # === CHANGE: Use the recommended 'gemini-1.5-flash-latest' model ===
-        self.model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        self.safety_settings = {
-            'HARM_CATEGORY_HARASSMENT': 'BLOCK_NONE',
-            'HARM_CATEGORY_HATE_SPEECH': 'BLOCK_NONE',
-            'HARM_CATEGORY_SEXUALLY_EXPLICIT': 'BLOCK_NONE',
-            'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE'
-        }
-        self.log_func("✍️ Gemini Text generator initialized with model: gemini-1.5-flash-latest")
+        self.model = genai.GenerativeModel('models/gemini-2.5-flash')
+        
+        self.safety_settings = [
+            {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": "BLOCK_NONE",
+            },
+            {
+                "category": "HARM_CATEGORY_HATE_SPEECH",
+                "threshold": "BLOCK_NONE",
+            },
+            {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "threshold": "BLOCK_NONE",
+            },
+            {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                "threshold": "BLOCK_NONE",
+            },
+        ]
+        self.log_func("✍️ Gemini Text generator initialized with model: gemini-2.5-flash")
 
     def generate_onomatopoeia(self, video_caption: str, audio_context: str, scene_context: Set[str]) -> str:
         """Generate onomatopoeia using Gemini Pro."""
@@ -42,7 +54,13 @@ class GeminiTextGenerator:
         )
 
         try:
-            response = self.model.generate_content(prompt, safety_settings=self.safety_settings)
+            response = self.model.generate_content(
+                prompt, 
+                safety_settings=self.safety_settings
+            )
+            if not response or not hasattr(response, 'text') or not response.text:
+                self.log_func(f"💥 Gemini returned empty response")
+                return ""
             onomatopoeia = response.text.strip().upper()
             self.log_func(f"✨ Gemini generated: '{onomatopoeia}' from context: {full_context}")
             return onomatopoeia

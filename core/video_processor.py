@@ -111,7 +111,6 @@ class VideoProcessor:
             suggested_title = title_generator.generate_title(
                 video_duration=video_duration,
                 mic_transcriptions=mic_transcriptions_list,
-                onomatopoeia_events=onomatopoeia_events,
                 timeline_events=decision_timeline if decision_timeline else [],
                 video_analysis_map=video_analysis_map
             )
