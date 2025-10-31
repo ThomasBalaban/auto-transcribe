@@ -4,7 +4,7 @@ import google.generativeai as genai # type: ignore
 from utils.config import get_gemini_api_key
 from typing import List, Dict, Set
 from PIL import Image
-import cv2
+import cv2 # type: ignore
 import numpy as np
 import json
 

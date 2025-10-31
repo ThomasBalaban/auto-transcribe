@@ -1,4 +1,4 @@
-# core/video_processor.py - UPDATED
+# core/video_processor.py - UPDATED WITH TITLE GENERATION
 import os
 import shutil
 import tempfile
@@ -62,7 +62,6 @@ class VideoProcessor:
             log_func("INFO: Resources released.")
 
             # --- 2. DIALOGUE TRANSCRIPTION ---
-            # This phase remains the same
             log_func("\n--- PHASE 2: Dialogue Transcription ---")
             mic_audio_path = os.path.join(temp_dir, f"{os.path.basename(input_file)}_mic.wav")
             if core.transcriber.convert_to_audio(input_file, mic_audio_path, track_index="a:1"):
@@ -104,8 +103,39 @@ class VideoProcessor:
             else:
                 log_func("No AI Director edits were made. Proceeding with original video.")
 
-            # --- 4. EMBED SUBTITLES ---
-            log_func("\n--- PHASE 4: Embedding All Subtitles ---")
+            # --- 4. TITLE GENERATION ---
+            log_func("\n--- PHASE 4: AI Title Generation ---")
+            from title_gen.title_generator import TitleGenerator
+            
+            title_generator = TitleGenerator(log_func=log_func)
+            suggested_title = title_generator.generate_title(
+                video_duration=video_duration,
+                mic_transcriptions=mic_transcriptions_list,
+                onomatopoeia_events=onomatopoeia_events,
+                timeline_events=decision_timeline if decision_timeline else [],
+                video_analysis_map=video_analysis_map
+            )
+            
+            # Use title as filename if generated successfully
+            if suggested_title:
+                log_func(f"\n{'='*60}")
+                log_func(f"📺 GENERATED TITLE:")
+                log_func(f"   {suggested_title}")
+                log_func(f"{'='*60}\n")
+                
+                # Convert title to filesystem-safe filename
+                filename = title_generator.title_to_filename(suggested_title)
+                
+                # Update output path to use title as filename
+                output_dir = os.path.dirname(output_file)
+                output_file = os.path.join(output_dir, f"{filename}.mp4")
+                
+                log_func(f"📁 Output will be saved as: {os.path.basename(output_file)}")
+            else:
+                log_func("⚠️  Title generation failed - using original filename scheme")
+
+            # --- 5. EMBED SUBTITLES ---
+            log_func("\n--- PHASE 5: Embedding All Subtitles ---")
             embed_subtitles(
                 input_video=video_to_subtitle,
                 output_video=output_file,
@@ -124,7 +154,7 @@ class VideoProcessor:
             if not os.path.exists(output_file):
                 shutil.copy2(input_file, output_file)
         finally:
-            # --- 5. CLEANUP ---
+            # --- 6. CLEANUP ---
             log_func("\n--- Cleaning up temporary files ---")
             temp_files_to_clean = [
                 onomatopoeia_subtitle_path, mic_subtitle_path, desktop_subtitle_path, 

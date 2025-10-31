@@ -1,6 +1,6 @@
 # vision_llm_analyzer.py
 
-import cv2
+import cv2 # type: ignore
 import numpy as np
 import base64
 import requests

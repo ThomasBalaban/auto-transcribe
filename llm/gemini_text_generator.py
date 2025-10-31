@@ -1,6 +1,6 @@
 # gemini_text_generator.py
 
-import config.google.generativeai as genai
+import google.generativeai as genai # type: ignore
 from utils.config import get_gemini_api_key
 from typing import Set
 
