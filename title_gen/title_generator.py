@@ -8,12 +8,11 @@ import json
 from typing import Optional, Tuple, List
 import os
 import time
-import google.generativeai as genai
+import google.generativeai as genai # type: ignore
 import re
 from llm.gemini_vision_analyzer import GeminiVisionAnalyzer
 from video_utils import get_video_duration # For getting video duration
 from PIL import Image
-import cv2
 
 
 class TitleGenerator:
