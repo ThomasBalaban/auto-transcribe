@@ -1,7 +1,7 @@
 # title_gen/title_generator.py
 """
 AI-powered title generation for gaming clips using Gemini.
-Analyzes the video directly with a strong focus on the final 20 seconds.
+Analyzes the video directly with dialogue context for better titles.
 """
 
 import json
@@ -11,13 +11,13 @@ import time
 import google.generativeai as genai # type: ignore
 import re
 from llm.gemini_vision_analyzer import GeminiVisionAnalyzer
-from video_utils import get_video_duration # For getting video duration
+from video_utils import get_video_duration
 from PIL import Image
 
 
 class TitleGenerator:
     """
-    Generates YouTube-style titles with a heavy emphasis on the clip's climax.
+    Generates YouTube-style titles with dialogue context.
     """
 
     def __init__(self, log_func=None):
@@ -46,13 +46,15 @@ class TitleGenerator:
         self,
         video_path: str,
         shorts_analysis_path: str = "shorts_analysis.json",
+        mic_transcriptions: Optional[List[str]] = None,      # ✅ NEW
+        desktop_transcriptions: Optional[List[str]] = None   # ✅ NEW
     ) -> Optional[Tuple[str, str, str]]:
         """
-        Main entry point for title generation.
+        Main entry point for title generation with dialogue context.
         Returns a tuple containing (title, description, reasoning) or None.
         """
         try:
-            self.log_func("\n🎬 Starting climax-focused title generation...")
+            self.log_func("\n🎬 Starting dialogue-aware title generation...")
 
             if not os.path.exists(shorts_analysis_path):
                 self.log_func(f"⚠️ {shorts_analysis_path} not found. Cannot generate title.")
@@ -63,7 +65,13 @@ class TitleGenerator:
 
             climax_frames = self._extract_climax_frames(video_path)
 
-            prompt = self._build_gemini_prompt(analysis_data)
+            # ✅ NEW: Pass transcriptions to prompt builder
+            prompt = self._build_gemini_prompt(
+                analysis_data,
+                mic_transcriptions,
+                desktop_transcriptions
+            )
+            
             title_details = self._call_gemini_api(prompt, video_path, climax_frames)
 
             if title_details and title_details[0]:
@@ -85,36 +93,135 @@ class TitleGenerator:
             self.log_func(traceback.format_exc())
             return None
 
-    def _build_gemini_prompt(self, analysis_data: dict) -> str:
-        """Builds the comprehensive prompt for Gemini with new, refined rules."""
+    def _format_transcription_for_prompt(
+        self, 
+        transcriptions: List[str], 
+        focus_end: bool = True,
+        max_words: int = 150
+    ) -> str:
+        """
+        Format transcriptions for Gemini prompt.
+        If focus_end=True, prioritizes last 30 seconds.
+        """
+        if not transcriptions:
+            return "No dialogue detected"
+        
+        # Parse timestamps
+        parsed = []
+        for line in transcriptions:
+            try:
+                time_part, text = line.split(':', 1)
+                start_str, end_str = time_part.split('-')
+                start_time = float(start_str)
+                text = text.strip()
+                parsed.append((start_time, text))
+            except:
+                continue
+        
+        if not parsed:
+            return "No valid dialogue"
+        
+        # If focusing on end, get last 30 seconds
+        if focus_end and len(parsed) > 0:
+            max_time = parsed[-1][0]
+            cutoff_time = max(0, max_time - 30)
+            parsed = [(t, txt) for t, txt in parsed if t >= cutoff_time]
+        
+        # Limit total words
+        if len(parsed) > max_words:
+            parsed = parsed[-max_words:]
+        
+        # Format nicely with timestamps
+        formatted_lines = []
+        for timestamp, text in parsed:
+            formatted_lines.append(f"[{timestamp:.1f}s] {text}")
+        
+        return "\n".join(formatted_lines)
+
+    def _build_gemini_prompt(
+        self, 
+        analysis_data: dict,
+        mic_transcriptions: Optional[List[str]] = None,      # ✅ NEW
+        desktop_transcriptions: Optional[List[str]] = None   # ✅ NEW
+    ) -> str:
+        """Builds the comprehensive prompt for Gemini with dialogue context."""
+
+        # ✅ NEW: Format transcriptions for better readability
+        mic_dialogue = "Not available"
+        game_dialogue = "Not available"
+        
+        if mic_transcriptions:
+            mic_dialogue = self._format_transcription_for_prompt(mic_transcriptions, focus_end=True)
+            self.log_func(f"   Formatted {len(mic_transcriptions)} mic words for prompt (last 30s focus)")
+        
+        if desktop_transcriptions:
+            game_dialogue = self._format_transcription_for_prompt(desktop_transcriptions, focus_end=True)
+            self.log_func(f"   Formatted {len(desktop_transcriptions)} game words for prompt (last 30s focus)")
 
         successful_titles = [
             f"- \"{item['title']}\" (Views: {item['views']:,}): {item['gemini_analysis']['title_effectiveness_analysis']}"
             for item in analysis_data.get('shorts', [])[:15]
         ]
+        
         prompt = f"""You are an expert YouTube content strategist specializing in viral gaming clips.
 
-        === STYLE ANALYSIS (My Most Successful Videos) ===
-        Here is an analysis of my top-performing YouTube Shorts. Your title must match this voice.
-        {chr(10).join(successful_titles)}
+=== STYLE ANALYSIS (My Most Successful Videos) ===
+Here is an analysis of my top-performing YouTube Shorts. Your title must match this voice.
+{chr(10).join(successful_titles)}
 
-        === CRITICAL INSTRUCTIONS ===
-        1.  **GOAL: GET THE CLICK.** The best title is one that is clickable. This is more important than perfect grammar or a literal description. Use humor, irony, intrigue, or create a curiosity gap to make people want to see the clip.
-        2.  **PRIORITIZE PLAYER REACTIONS:** My and my friends' dialogue and reactions are the most important source for a title. On-screen text from the game is less important and should only be used if it's the absolute funniest part of the clip. Player voices > Game text.
-        3.  **FOCUS ON THE PUNCHLINE:** The most important part of the clip is the final 15-20 seconds. Your analysis and title MUST focus on what happens in these final moments.
-        4.  **DO NOT GUESS THE GAME TITLE:** Only include a game name in parentheses `(Game Name)` if you are 100% certain. If unsure, OMIT the game title.
-        5.  **AVOID UNNECESSARY CONTEXT:** Do not mention friends' usernames or other stream-specific context that a general audience wouldn't understand.
+=== DIALOGUE CONTEXT (CRITICAL!) ===
+**PLAYER COMMENTARY (MY VOICE - MOST IMPORTANT):**
+{mic_dialogue}
 
-        === YOUR TASK ===
-        Analyze the provided video clip AND the specific climax frames. Then, respond with a single JSON object with three keys: "video_description", "title", and "reasoning".
+**GAME AUDIO (NPCs/Events/Music):**
+{game_dialogue}
 
-        Example Response:
-        {{
-          "video_description": "The player confidently states they won't get scared, then immediately gets jump-scared by an animatronic and screams.",
-          "title": "Famous Last Words",
-          "reasoning": "The title uses irony by referencing the player's verbal reaction right before the climax, which is a common pattern in your successful videos. It's short, punchy, and intriguing, which should get clicks. I did not add a game title because it wasn't clearly visible."
-        }}
-        """
+=== CRITICAL INSTRUCTIONS ===
+1. **PRIORITIZE WHAT WAS SAID**: The player's actual words are your PRIMARY source for titles.
+   - Look for ironic statements before outcomes ("I'm not scared" → gets scared)
+   - Funny reactions or commentary
+   - Quotable moments that capture the essence
+   
+2. **DIALOGUE PATTERNS TO EXPLOIT:**
+   - "I'm not scared" → [gets scared] = "Famous Last Words"
+   - Funny one-liners or exclamations = Direct quote or inspired titles
+   - Call-and-response between player and game = Highlight the exchange
+   - Player confidence → immediate failure = Irony-based titles
+   
+3. **FOCUS ON THE CLIMAX**: The last 15-20 seconds of dialogue + video are most important.
+
+4. **EXAMPLES OF DIALOGUE-DRIVEN TITLES:**
+   - Player: "This is easy" → Dies immediately → Title: "Spoke Too Soon"
+   - Player: "WHAT THE—" → Title: Use the authentic reaction
+   - NPC: "Don't go in there" → Player goes in → Title: "I Should Have Listened"
+   - Player: "I got this" → Fails → Title: "He Did Not, In Fact, Got This"
+
+5. **AVOID UNNECESSARY CONTEXT**: Don't mention friends' usernames or stream-specific details.
+
+6. **DO NOT GUESS THE GAME TITLE**: Only include game name in parentheses (Game Name) if you are 100% certain. If unsure, OMIT the game title.
+
+7. **GET THE CLICK**: Humor, irony, intrigue, or curiosity gaps are more important than perfect grammar. Make people want to click.
+
+=== YOUR TASK ===
+Analyze the DIALOGUE FIRST (especially last 30 seconds), then the video frames. Create a title that captures the best moment - preferably derived from what was actually said.
+
+The video frames show the visual climax - combine this with dialogue for maximum impact.
+
+Respond with a single JSON object:
+{{
+  "video_description": "What happened (focus on what was SAID and what happened visually)",
+  "title": "Your title (preferably derived from or inspired by dialogue)",
+  "reasoning": "Why this title works (reference specific dialogue quotes if used)"
+}}
+
+Example Response:
+{{
+  "video_description": "Player confidently states 'I'm not scared of this game' while exploring, then immediately encounters a jumpscare and screams 'OH MY GOD'",
+  "title": "Famous Last Words",
+  "reasoning": "The title captures the ironic contrast between the player's confident statement and immediate fear. This matches your successful video pattern of ironic outcomes, and the phrase 'famous last words' is instantly recognizable."
+}}
+"""
+        
         return prompt
 
     def _call_gemini_api(self, prompt: str, video_path: str, climax_frames: List[Image.Image]) -> Optional[Tuple[str, str, str]]:
@@ -137,7 +244,7 @@ class TitleGenerator:
                 api_content.extend(climax_frames)
 
             self.log_func("Generating title analysis with Gemini...")
-            response = analyzer.model.generate_content(api_content)
+            response = analyzer.model.generate_content(api_content, safety_settings=analyzer.safety_settings)
             genai.delete_file(video_file.name)
 
             response_text = response.text.strip()
