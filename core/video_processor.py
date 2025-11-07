@@ -13,6 +13,8 @@ from ai_director.video_editor import VideoEditor
 from video_utils import get_video_duration
 from title_gen.title_generator import TitleGenerator
 from clip_editor.intelligent_trimmer import IntelligentTrimmer
+from utils.timestamp_processor import extend_segments_for_dialogue
+
 
 class VideoProcessor:
     @staticmethod
@@ -23,12 +25,13 @@ class VideoProcessor:
         detailed_logs: bool,
         log_func,
         title_update_callback=None,
-        enable_trimming: bool = True  # New parameter
+        enable_trimming: bool = True 
     ):
         temp_dir = tempfile.gettempdir()
         final_output_path = output_file
         suggested_title = None
-        trim_segments = None  # Store trim decisions for later
+        trim_segments = None
+        DIALOGUE_TRIM_BUFFER = 0.5
 
         try:
             log_func("="*60)
@@ -87,24 +90,33 @@ class VideoProcessor:
             del detector
             gc.collect()
 
+
             # --- PHASE 4: Dialogue Transcription ---
             log_func("\n--- PHASE 4: Dialogue Transcription ---")
             mic_subtitle_path, desktop_subtitle_path = None, None
-            mic_transcriptions_list = []
+            
+            mic_transcriptions_list_raw = []
+            mic_transcriptions_list_subs = []
             
             mic_audio_path = os.path.join(temp_dir, f"{os.path.basename(video_to_process)}_mic.wav")
-            if core.transcriber.convert_to_audio(video_to_process, mic_audio_path, track_index="a:1"):
-                mic_transcriptions_list = core.transcriber.transcribe_audio("large", "cpu", mic_audio_path, True, log_func, "English", "Track 2 (Mic)")
+            
+            if core.transcriber.convert_to_audio(video_to_process, mic_audio_path, "a:1", log_func):
+                
+                mic_transcriptions_list_raw, mic_transcriptions_list_subs = core.transcriber.transcribe_audio("large", "cpu", mic_audio_path, True, log_func, "English", "Track 2 (Mic)")
+                
                 mic_subtitle_path_srt = os.path.join(temp_dir, f"{os.path.basename(video_to_process)}_mic.srt")
-                convert_to_srt("\n".join(mic_transcriptions_list), mic_subtitle_path_srt, video_to_process, log_func, is_mic_track=True)
+                
+                convert_to_srt("\n".join(mic_transcriptions_list_subs), mic_subtitle_path_srt, video_to_process, log_func, is_mic_track=True)
+                
                 mic_subtitle_path = mic_subtitle_path_srt.replace(".srt", ".ass")
                 os.remove(mic_audio_path)
 
             desktop_audio_path = os.path.join(temp_dir, f"{os.path.basename(video_to_process)}_desktop.wav")
-            if core.transcriber.convert_to_audio(video_to_process, desktop_audio_path, track_index="a:2"):
-                desktop_transcriptions = core.transcriber.transcribe_audio("large", "cpu", desktop_audio_path, True, log_func, "English", "Track 3 (Desktop)")
+            
+            if core.transcriber.convert_to_audio(video_to_process, desktop_audio_path, "a:2", log_func):            
+                _, desktop_transcriptions_subs = core.transcriber.transcribe_audio("large", "cpu", desktop_audio_path, True, log_func, "English", "Track 3 (Desktop)")
                 desktop_subtitle_path = os.path.join(temp_dir, f"{os.path.basename(video_to_process)}_desktop.srt")
-                convert_to_srt("\n".join(desktop_transcriptions), desktop_subtitle_path, video_to_process, log_func)
+                convert_to_srt("\n".join(desktop_transcriptions_subs), desktop_subtitle_path, video_to_process, log_func)
                 os.remove(desktop_audio_path)
 
             # --- PHASE 5: AI Director Editing ---
@@ -113,7 +125,7 @@ class VideoProcessor:
             decision_timeline = director.analyze_video_and_create_timeline(
                 video_path=video_to_process, 
                 video_duration=video_duration, 
-                mic_transcription=mic_transcriptions_list,
+                mic_transcription=mic_transcriptions_list_raw,
                 audio_events=onomatopoeia_events, 
                 video_analysis_map=video_analysis_map
             )
@@ -143,21 +155,28 @@ class VideoProcessor:
             )
             log_func(f"✅ Subtitles embedded successfully")
 
-            # --- PHASE 6.5: Execute Intelligent Trimming ---
-            log_func("\n--- PHASE 6.5: Execute Intelligent Trimming ---")
+            log_func("\n--- PHASE 7: Execute Intelligent Trimming ---")
             
             if enable_trimming and trim_segments:
                 log_func("   Applying trim plan to video with embedded subtitles...")
                 
-                # Need to reference trimmer again (it was created in Phase 2)
-                # or just call the method directly
-                trimmer = IntelligentTrimmer(log_func=log_func)  # Add this line
+                log_func(f"   Extending trim segments with {DIALOGUE_TRIM_BUFFER}s buffer...")
+                extended_trim_segments = extend_segments_for_dialogue(
+                    trim_segments, 
+                    mic_transcriptions_list_raw,
+                    log_func,
+                    max_extension_seconds=4.0,
+                    buffer_seconds=DIALOGUE_TRIM_BUFFER
+                )
+                log_func(f"   Original segments: {trim_segments}")
+                log_func(f"   Buffered segments: {extended_trim_segments}")
                 
-                # Apply trim to the video with subtitles
+                trimmer = IntelligentTrimmer(log_func=log_func)
+                
                 trim_success = trimmer.apply_trim(
                     input_video=intermediate_with_subs,
                     output_video=output_file,
-                    segments_to_keep=trim_segments
+                    segments_to_keep=extended_trim_segments
                 )
                 
                 if trim_success:
@@ -167,12 +186,11 @@ class VideoProcessor:
                     log_func("⚠️ Trim execution failed, using untrimmed video")
                     shutil.copy2(intermediate_with_subs, output_file)
             else:
-                # No trimming, just copy the subtitled video
                 log_func("   No trimming - using video with subtitles as-is")
                 shutil.copy2(intermediate_with_subs, output_file)
 
             # --- PHASE 7: Final Renaming ---
-            log_func("\n--- PHASE 7: Final Renaming ---")
+            log_func("\n--- PHASE 8: Final Renaming ---")
             if suggested_title:
                 filename = title_generator.title_to_filename(suggested_title)
                 output_dir = os.path.dirname(output_file)
@@ -194,14 +212,13 @@ class VideoProcessor:
             if not os.path.exists(output_file) and os.path.exists(input_file):
                 shutil.copy2(input_file, output_file)
         finally:
-            # --- Cleanup ---
             log_func("\n--- Cleaning up temporary files ---")
             temp_files_to_clean = [
                 onomatopoeia_subtitle_path, 
                 mic_subtitle_path, 
                 desktop_subtitle_path,
                 edited_video_path,
-                intermediate_with_subs  # Clean up intermediate file
+                intermediate_with_subs
             ]
             for path in temp_files_to_clean:
                 if path and os.path.exists(path):
