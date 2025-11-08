@@ -9,6 +9,7 @@ audio-visual event peak.
 
 import random
 from typing import List, Dict, Tuple
+from animations.animation_types import AnimationType
 from animations.core import OnomatopoeiaAnimator
 from llm.ollama_integration import OllamaLLM
 
@@ -26,6 +27,41 @@ class MultimodalFusionEngine:
         self.min_confidence_threshold = 0.45
         self.local_llm = OllamaLLM(log_func=self.log_func)
         self.animator = OnomatopoeiaAnimator()
+
+    def _get_fallback_animation(self, audio_event: Dict, effect_decision: Dict) -> str:
+        """
+        Smart fallback animation selection based on audio characteristics.
+        Used when AI selection fails in Auto mode.
+        """
+        energy = audio_event.get('energy', 0.5)
+        onset_type = audio_event.get('onset_type', 'GENERAL')
+        tier = audio_event.get('tier', 'medium')
+        word = effect_decision.get('text', '').upper()
+        
+        self.log_func(f"🎯 AI selection unavailable, using smart fallback for '{word}'")
+        
+        # High-energy impacts get shake
+        if energy > 0.7 or tier == 'major':
+            return AnimationType.SHAKE
+        
+        # Sharp, high-frequency sounds get pop & shrink
+        if onset_type == 'HIGH_FREQ':
+            return AnimationType.POP_SHRINK
+        
+        # Low-frequency rumbles get pulse
+        if onset_type == 'LOW_FREQ':
+            return AnimationType.PULSE
+        
+        # Broadband crashes get explode
+        if onset_type == 'BROADBAND':
+            return AnimationType.EXPLODE_OUT
+        
+        # Medium energy gets wiggle (versatile)
+        if energy > 0.4:
+            return AnimationType.WIGGLE
+        
+        # Default to drift & fade for lower energy
+        return AnimationType.DRIFT_FADE
 
     def process_multimodal_events(
         self, audio_events: List[Dict], video_analyses_map: Dict[float, Dict], animation_setting: str
@@ -54,13 +90,14 @@ class MultimodalFusionEngine:
                             audio_context=self._get_audio_context(audio_event),
                             video_caption=effect_decision['context']
                         )
-                        # Fallback to Random if AI fails
-                        chosen_animation = ai_choice or self.animator.get_random_animation_type()
+                        # Smart fallback based on audio characteristics if AI fails
+                        if ai_choice:
+                            chosen_animation = ai_choice
+                        else:
+                            chosen_animation = self._get_fallback_animation(audio_event, effect_decision)
 
-                    # If Random mode, choose one now
-                    elif base_animation_type == "Random":
-                        chosen_animation = self.animator.get_random_animation_type()
-
+                    # Otherwise base_animation_type is a specific animation like "pop_shrink", "shake", etc.
+                    # Just use it directly
 
                     final_effects.append(
                         self._create_final_effect(effect_decision, audio_event, chosen_animation)

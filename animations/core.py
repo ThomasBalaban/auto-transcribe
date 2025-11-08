@@ -23,21 +23,16 @@ class OnomatopoeiaAnimator:
         return AnimationType.get_all_types()
 
     @classmethod
-    def get_random_animation_type(cls):
-        """Randomly select an animation type from all available options."""
-        return random.choice(cls.get_all_animation_types())
-
-    @classmethod
     def get_animation_type_from_setting(cls, animation_setting):
         """Get animation type based on UI setting."""
         display_names = AnimationType.get_display_names()
         name_to_type = {v: k for k, v in display_names.items()}
 
         # Add special cases for Random and the new Intelligent mode
-        name_to_type["Random"] = "Random"
-        name_to_type["Intelligent"] = "Intelligent" # ADDED
+        name_to_type["Auto"] = "Intelligent"
+        name_to_type["Intelligent"] = "Intelligent" 
 
-        return name_to_type.get(animation_setting, "Random")
+        return name_to_type.get(animation_setting, "Intelligent")
 
     @classmethod
     def get_animation_timing_offset(cls, animation_type):

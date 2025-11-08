@@ -16,7 +16,7 @@ class SubtitleGenerator:
         self.log_func = log_func or print
 
     def create_subtitle_file(self, events: List[Dict], output_path: str,
-                           animation_type: str = "Random") -> bool:
+                           animation_type: str = "Auto") -> bool:
         """
         Create subtitle file with onomatopoeia effects.
 

@@ -28,7 +28,6 @@ class DualSubtitleApp:
         self.load_window_geometry()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-    # ... (save_window_geometry, load_window_geometry, on_closing, setup_ui, log, process_log_messages, check_system_status remain the same) ...
     def save_window_geometry(self):
         try:
             geometry = self.root.geometry()
@@ -57,7 +56,7 @@ class DualSubtitleApp:
         """Create and arrange all UI elements."""
         frame = UISetup.create_main_layout(self.root)
         frame.grid_columnconfigure(0, weight=1)
-        frame.grid_rowconfigure(6, weight=1)
+        frame.grid_rowconfigure(5, weight=1)
 
         files_frame, self.files_textbox = UISetup.create_file_list_section(frame, self)
         files_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
@@ -68,17 +67,14 @@ class DualSubtitleApp:
         onomatopoeia_frame, self.animation_var = UISetup.create_onomatopoeia_section(frame, self)
         onomatopoeia_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
 
-        settings_frame, self.detailed_logs_var = UISetup.create_settings_section(frame)
-        settings_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
-
         progress_frame, self.progress_label, self.progress_bar = UISetup.create_progress_section(frame)
-        progress_frame.grid(row=4, column=0, sticky="ew", padx=5, pady=5)
+        progress_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5)
 
         self.process_button = UISetup.create_process_button(frame, self)
-        self.process_button.grid(row=5, column=0, pady=10)
+        self.process_button.grid(row=4, column=0, pady=10)
 
         log_frame, self.log_box = UISetup.create_log_section(frame)
-        log_frame.grid(row=6, column=0, sticky="nsew", padx=5, pady=5)
+        log_frame.grid(row=5, column=0, sticky="nsew", padx=5, pady=5)
 
     def log(self, message):
         self.message_queue.put(message + "\n")
@@ -210,7 +206,7 @@ class DualSubtitleApp:
             total_videos = len(self.input_files)
             self.log(f"Starting batch processing of {total_videos} videos...")
             animation_type = self.animation_var.get()
-            detailed_logs = self.detailed_logs_var.get()
+            detailed_logs = True  # Always enabled
 
             for i, (input_file, output_file) in enumerate(zip(self.input_files, self.output_files)):
                 self.current_process_index = i

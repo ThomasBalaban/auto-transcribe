@@ -110,6 +110,7 @@ class OllamaLLM:
     def choose_animation(self, onomatopoeia: str, audio_context: str, video_caption: str) -> Optional[str]:
         """
         Uses the LLM to intelligently choose the best animation type.
+        Returns None if AI selection fails (caller should use fallback).
         """
         if not self.available:
             return None
@@ -152,12 +153,11 @@ class OllamaLLM:
                 self.log_func(f"🧠 AI chose animation: '{choice}'")
                 return choice
             else:
-                self.log_func(f"⚠️ AI returned an invalid animation choice: '{choice}'. Falling back.")
+                self.log_func(f"⚠️ AI returned invalid animation choice: '{choice}'. Returning None for fallback.")
                 return None
         except Exception as e:
             self.log_func(f"💥 AI animation choice error: {e}")
             return None
-
 
     def _clean_output(self, text: str) -> Optional[str]:
         """Cleans the output from the LLM to get a single, valid onomatopoeia."""

@@ -56,6 +56,31 @@ HALLUCINATION_PATTERNS = [
     r"subtítulos.*amara", # Subtitle watermarks
 ]
 
+QUIET_SEGMENT_BLACKLIST = {
+    # Words that are ONLY suspicious in very quiet audio
+    # These are common Whisper hallucinations during silence
+    "thank",
+    "thanks", 
+    "you",
+    "watching",
+    "subscribe",
+    "like",
+    "please",
+    "smash",
+    "hit",
+    "bell",
+    "notification",
+    "description",
+    "link",
+    "see",
+    "next",
+    "time",
+    "make",
+    "sure",
+    "check",
+    "out",
+}
+
 def is_quiet_segment(audio_path, start_time, end_time, quiet_threshold=0.02):
     """
     Check if audio segment is very quiet (likely hallucination territory).
@@ -165,6 +190,15 @@ def should_filter_word(word_text, word_data, audio_path, start_time, end_time, l
     if exact_match and low_confidence:
         return True, f"Exact hallucination match with low confidence: '{word_text}'"
     
+    # Check for common hallucination words in very quiet segments
+    word_lower = word_text.lower().strip()
+    if word_lower in QUIET_SEGMENT_BLACKLIST:
+        if is_quiet:
+            return True, f"Suspicious word in quiet segment: '{word_text}'"
+        # Even if not super quiet, check confidence
+        if low_confidence:
+            return True, f"Suspicious word with low confidence: '{word_text}'"
+    
     # Medium confidence filtering (multiple red flags needed)
     red_flags = sum([is_quiet, low_confidence, partial_match])
     if red_flags >= 2:
@@ -179,6 +213,7 @@ def should_filter_word(word_text, word_data, audio_path, start_time, end_time, l
     
     # Don't filter - not enough evidence
     return False, "Insufficient evidence for hallucination"
+
 
 def filter_hallucinations(transcriptions, audio_path, track_name="", log_func=None):
     """

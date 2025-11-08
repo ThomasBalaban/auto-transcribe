@@ -77,10 +77,10 @@ class UISetup:
         animation_row.pack(fill="x", padx=20, pady=5)
 
         ctk.CTkLabel(animation_row, text="Animation Type:").pack(side="left", padx=5, pady=5)
-        animation_var = ctk.StringVar(value="Random")
+        animation_var = ctk.StringVar(value="Auto")
 
         animation_options = [
-            "Random", "Drift & Fade", "Wiggle", "Pop & Shrink",
+            "Drift & Fade", "Wiggle", "Pop & Shrink",
             "Shake", "Pulse", "Wave", "Explode-Out", "Hyper Bounce", "Static"
         ]
 
@@ -92,20 +92,6 @@ class UISetup:
         ).pack(side="left", padx=5, pady=5)
 
         return onomatopoeia_frame, animation_var
-
-    @staticmethod
-    def create_settings_section(parent):
-        """Create the general settings section, including the detailed logs checkbox."""
-        settings_frame = ctk.CTkFrame(parent)
-        
-        detailed_logs_var = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(
-            settings_frame,
-            text="Enable Detailed Logs",
-            variable=detailed_logs_var
-        ).pack(anchor="w", padx=20, pady=5)
-
-        return settings_frame, detailed_logs_var
 
     @staticmethod
     def create_progress_section(parent):
