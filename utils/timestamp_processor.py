@@ -1,3 +1,5 @@
+# utils/timestamp_processor.py
+
 """
 Timestamp processing utilities for subtitle generation.
 Handles duration adjustments, overlap fixing, and timestamp formatting.
@@ -39,6 +41,10 @@ def detect_continuous_vocalization(
     if not LIBROSA_AVAILABLE:
         if log_func:
             log_func("   ⚠️ librosa not available, skipping vocalization detection")
+        return False, check_time
+    
+    if not audio_path:
+        # No audio path provided (e.g., track didn't exist)
         return False, check_time
     
     try:
@@ -297,23 +303,28 @@ def get_duration_stats(transcriptions):
 def extend_segments_for_dialogue(
     segments_to_keep: List[Tuple[float, float]],
     raw_mic_transcriptions: List[str],
+    raw_desktop_transcriptions: List[str], # ✅ NEW
     log_func,
     max_extension_seconds: float = 3.0,
     buffer_seconds: float = 0.5,
-    mic_audio_path: str = None
+    mic_audio_path: str = None,
+    desktop_audio_path: str = None          # ✅ NEW
 ) -> List[Tuple[float, float]]:
     """
-    Extends AI-generated trim segments to protect dialogue and continuous vocalizations.
+    Extends AI-generated trim segments to protect dialogue and continuous vocalizations
+    from BOTH mic and desktop tracks.
     
-    KEY FEATURE: Scans GAPS between segments for untranscribed screams/yells by analyzing mic track energy.
+    KEY FEATURE: Scans GAPS between segments for untranscribed screams/yells by analyzing energy on BOTH tracks.
     
     Args:
         segments_to_keep: List of (start, end) tuples from Gemini
-        raw_mic_transcriptions: Raw transcript for word-level protection
+        raw_mic_transcriptions: Raw transcript for mic track protection
+        raw_desktop_transcriptions: Raw transcript for desktop track protection (friends, NPCs)
         log_func: Logging function
         max_extension_seconds: Maximum seconds to extend for any single protection
         buffer_seconds: Safety buffer added to all boundaries
         mic_audio_path: Path to mic audio file for energy analysis
+        desktop_audio_path: Path to desktop audio file for energy analysis
         
     Returns:
         Extended segments that protect all vocal content
@@ -323,12 +334,18 @@ def extend_segments_for_dialogue(
         log_func("   No segments to protect")
         return []
     
-    # Parse word timestamps for word-level protection
-    parsed_words = [] 
+    # ✅ NEW: Combine word timestamps from BOTH tracks for word-level protection
+    all_parsed_words = [] 
     for line in raw_mic_transcriptions:
         parsed = parse_timestamp_line(line)
         if parsed:
-            parsed_words.append(parsed)
+            all_parsed_words.append(parsed + ("mic",)) # Add track identifier
+    for line in raw_desktop_transcriptions:
+        parsed = parse_timestamp_line(line)
+        if parsed:
+            all_parsed_words.append(parsed + ("desktop",)) # Add track identifier
+    
+    all_parsed_words.sort(key=lambda x: x[0]) # Sort combined list by start time
     
     segments_to_keep.sort(key=lambda x: x[0])
     
@@ -350,146 +367,155 @@ def extend_segments_for_dialogue(
         
         # ===== STEP 1: SCAN THE GAP BETWEEN THIS SEGMENT AND THE NEXT =====
         # This catches screams that START in the cut zone
-        if mic_audio_path and LIBROSA_AVAILABLE:
-            # Determine how far to look ahead
+        
+        # ✅ NEW: Check both mic and desktop audio for gap vocalizations
+        gap_vocalization_end = 0.0
+        
+        if LIBROSA_AVAILABLE:
             if segment_idx + 1 < len(segments_to_keep):
                 next_segment_start = segments_to_keep[segment_idx + 1][0]
                 gap_duration = next_segment_start - ai_end
                 log_func(f"      🔍 Gap to next segment: {ai_end:.2f}s to {next_segment_start:.2f}s ({gap_duration:.2f}s)")
                 
-                if gap_duration > 0.1:  # Only scan if there's a meaningful gap
-                    log_func(f"      🎤 Scanning gap for untranscribed vocalizations...")
+                if gap_duration > 0.1: # Only scan if there's a meaningful gap
                     
-                    # Scan the entire gap for high energy
-                    try:
-                        audio, sr = librosa.load(
-                            mic_audio_path,
-                            sr=16000,
-                            offset=ai_end,
-                            duration=min(gap_duration, 10.0)  # Cap at 10s to avoid loading huge segments
-                        )
-                        
-                        if len(audio) > 0:
-                            # Analyze in 50ms windows
-                            window_size = int(0.05 * sr)
-                            hop_size = int(0.01 * sr)
+                    for track_name, audio_path in [("Mic", mic_audio_path), ("Desktop", desktop_audio_path)]:
+                        if not audio_path:
+                            continue
                             
+                        log_func(f"      🎤 Scanning gap on {track_name} track for untranscribed vocalizations...")
+                        try:
+                            audio, sr = librosa.load(
+                                audio_path,
+                                sr=16000,
+                                offset=ai_end,
+                                duration=min(gap_duration, 10.0)
+                            )
+                            
+                            if len(audio) == 0:
+                                continue
+
+                            window_size, hop_size = int(0.05 * sr), int(0.01 * sr)
                             energy_threshold = 0.025
-                            vocalization_start = None
-                            vocalization_end = None
+                            vocalization_start_in_gap = None
+                            vocalization_end_in_gap = None
                             
                             for i in range(0, len(audio) - window_size, hop_size):
                                 window = audio[i:i + window_size]
                                 rms_energy = np.sqrt(np.mean(window**2))
-                                current_time = ai_end + (i / sr)
+                                current_time_in_gap = ai_end + (i / sr)
                                 
                                 if rms_energy > energy_threshold:
-                                    if vocalization_start is None:
-                                        vocalization_start = current_time
-                                        log_func(f"         🔊 High energy detected at {current_time:.2f}s (RMS: {rms_energy:.4f})")
-                                    vocalization_end = current_time + (window_size / sr)
-                                elif vocalization_start is not None:
-                                    # Energy dropped after finding vocalization
-                                    break
+                                    if vocalization_start_in_gap is None:
+                                        vocalization_start_in_gap = current_time_in_gap
+                                        log_func(f"         🔊 [{track_name}] High energy detected at {current_time_in_gap:.2f}s")
+                                    vocalization_end_in_gap = current_time_in_gap + (window_size / sr)
+                                elif vocalization_start_in_gap is not None:
+                                    break # Energy dropped
                             
-                            if vocalization_start is not None:
-                                log_func(f"      🚨 UNTRANSCRIBED VOCALIZATION IN GAP!")
-                                log_func(f"         Gap being cut: {ai_end:.2f}s - {next_segment_start:.2f}s")
-                                log_func(f"         Vocalization found: {vocalization_start:.2f}s - {vocalization_end:.2f}s")
+                            if vocalization_end_in_gap is not None:
+                                log_func(f"      🚨 [{track_name}] UNTRANSCRIBED VOCALIZATION IN GAP!")
+                                gap_vocalization_end = max(gap_vocalization_end, vocalization_end_in_gap)
                                 
-                                # Extend segment to include this vocalization
-                                extension_needed = vocalization_end - ai_end
-                                if extension_needed <= max_extension_seconds:
-                                    new_end = vocalization_end + buffer_seconds
-                                    log_func(f"         ✅ Extending segment to {new_end:.2f}s to protect vocalization")
-                                else:
-                                    new_end = ai_end + max_extension_seconds + buffer_seconds
-                                    log_func(f"         ⚠️ Vocalization too long ({extension_needed:.2f}s), capping at {new_end:.2f}s")
-                            else:
-                                log_func(f"      ✓ No high-energy content found in gap")
-                                
-                    except Exception as e:
-                        log_func(f"      ⚠️ Gap scanning failed: {e}")
+                        except Exception as e:
+                            log_func(f"      ⚠️ [{track_name}] Gap scanning failed: {e}")
+                    
+                    if gap_vocalization_end > 0:
+                        extension_needed = gap_vocalization_end - ai_end
+                        if extension_needed <= max_extension_seconds:
+                            new_end = gap_vocalization_end + buffer_seconds
+                            log_func(f"         ✅ Extending segment to {new_end:.2f}s to protect vocalization in gap")
+                        else:
+                            new_end = ai_end + max_extension_seconds + buffer_seconds
+                            log_func(f"         ⚠️ Vocalization too long, capping at {new_end:.2f}s")
+                    else:
+                        log_func(f"      ✓ No high-energy content found in gap on either track")
             else:
                 log_func(f"      ℹ️ Last segment - no gap to scan")
         
         # ===== STEP 2: CHECK FOR CONTINUOUS VOCALIZATION AT SEGMENT END =====
         # This catches when transcribed speech extends beyond its timestamp
-        if mic_audio_path and LIBROSA_AVAILABLE and new_end == ai_end:  # Only if we didn't already extend from gap scan
-            log_func(f"      🎤 Checking for continuous vocalization at segment end ({ai_end:.2f}s)...")
-            
-            is_vocalizing, actual_vocal_end = detect_continuous_vocalization(
-                mic_audio_path,
-                ai_end,
-                lookforward_duration=2.0,
-                energy_threshold=0.025,
-                log_func=log_func
-            )
-            
-            if is_vocalizing:
-                extension_needed = actual_vocal_end - ai_end
-                log_func(f"      🚨 VOCALIZATION EXTENDS BEYOND SEGMENT!")
-                log_func(f"         Gemini wanted to cut at: {ai_end:.2f}s")
-                log_func(f"         Actual vocal end: {actual_vocal_end:.2f}s")
-                log_func(f"         Extension needed: {extension_needed:.2f}s")
+        
+        # Only run if we didn't already extend from the gap scan
+        if new_end == ai_end: 
+            if LIBROSA_AVAILABLE:
+                log_func(f"      🎤 Checking for continuous vocalization at segment end ({ai_end:.2f}s) on both tracks...")
                 
-                if extension_needed <= max_extension_seconds:
-                    new_end = actual_vocal_end + buffer_seconds
-                    log_func(f"         ✅ Extending to {new_end:.2f}s (vocal_end + buffer)")
+                # Check Mic Track
+                mic_is_vocalizing, mic_vocal_end = detect_continuous_vocalization(
+                    mic_audio_path, ai_end, 2.0, 0.025, log_func
+                )
+                
+                # Check Desktop Track
+                desktop_is_vocalizing, desktop_vocal_end = detect_continuous_vocalization(
+                    desktop_audio_path, ai_end, 2.0, 0.025, log_func
+                )
+                
+                # Combine results
+                is_vocalizing = mic_is_vocalizing or desktop_is_vocalizing
+                actual_vocal_end = max(mic_vocal_end, desktop_vocal_end)
+                
+                if is_vocalizing:
+                    extension_needed = actual_vocal_end - ai_end
+                    log_func(f"      🚨 VOCALIZATION EXTENDS BEYOND SEGMENT!")
+                    log_func(f"         Gemini wanted to cut at: {ai_end:.2f}s")
+                    log_func(f"         Actual vocal end: {actual_vocal_end:.2f}s")
+                    
+                    if extension_needed <= max_extension_seconds:
+                        new_end = actual_vocal_end + buffer_seconds
+                        log_func(f"         ✅ Extending to {new_end:.2f}s (vocal_end + buffer)")
+                    else:
+                        new_end = (ai_end + max_extension_seconds) + buffer_seconds
+                        log_func(f"         ⚠️ Extension too long, capping at {new_end:.2f}s")
                 else:
-                    new_end = (ai_end + max_extension_seconds) + buffer_seconds
-                    log_func(f"         ⚠️ Extension too long, capping at {new_end:.2f}s")
+                    log_func(f"      ✓ No continuous vocalization at boundary")
+                    
+                    # ===== STEP 3: CHECK FOR WORD-LEVEL OVERLAPS (FALLBACK) =====
+                    # This is the final check if no continuous energy was found
+                    if all_parsed_words:
+                        found_word_overlap = False
+                        for (word_start, word_end, text, track) in all_parsed_words:
+                            if word_start <= ai_end < word_end:
+                                log_func(f"      📝 [{track}] Word overlap: '{text}' ends at {word_end:.2f}s, cut at {ai_end:.2f}s")
+                                
+                                extension_needed = word_end - ai_end
+                                if extension_needed <= max_extension_seconds:
+                                    new_end = word_end + buffer_seconds
+                                    log_func(f"         ✅ Extending to {new_end:.2f}s (word_end + buffer)")
+                                else:
+                                    new_end = (ai_end + max_extension_seconds) + buffer_seconds
+                                    log_func(f"         ⚠️ Extension capped at {new_end:.2f}s")
+                                
+                                found_word_overlap = True
+                                break
+                        
+                        if not found_word_overlap:
+                            new_end = ai_end + buffer_seconds
+                            log_func(f"      ✓ No word overlaps, adding buffer: {new_end:.2f}s")
+                    else:
+                        new_end = ai_end + buffer_seconds
+                        log_func(f"      ✓ No transcription data, adding buffer: {new_end:.2f}s")
+            
+            # Fallback if librosa is NOT available (Step 2 and 3 combined)
             else:
-                log_func(f"      ✓ No continuous vocalization at boundary")
-                
-                # ===== STEP 3: CHECK FOR WORD-LEVEL OVERLAPS (FALLBACK) =====
-                if parsed_words:
-                    found_word_overlap = False
-                    for (word_start, word_end, text) in parsed_words:
+                log_func(f"      ⚠️ librosa not available, using word-based protection only")
+                if all_parsed_words:
+                    found_overlap = False
+                    for (word_start, word_end, text, track) in all_parsed_words:
                         if word_start <= ai_end < word_end:
-                            log_func(f"      📝 Word overlap: '{text}' ends at {word_end:.2f}s, cut at {ai_end:.2f}s")
-                            
                             extension_needed = word_end - ai_end
                             if extension_needed <= max_extension_seconds:
                                 new_end = word_end + buffer_seconds
-                                log_func(f"         ✅ Extending to {new_end:.2f}s (word_end + buffer)")
                             else:
                                 new_end = (ai_end + max_extension_seconds) + buffer_seconds
-                                log_func(f"         ⚠️ Extension capped at {new_end:.2f}s")
-                            
-                            found_word_overlap = True
+                            found_overlap = True
+                            log_func(f"      📝 [{track}] Protected word '{text}': extended to {new_end:.2f}s")
                             break
                     
-                    if not found_word_overlap:
+                    if not found_overlap:
                         new_end = ai_end + buffer_seconds
-                        log_func(f"      ✓ No word overlaps, adding buffer: {new_end:.2f}s")
                 else:
                     new_end = ai_end + buffer_seconds
-                    log_func(f"      ✓ No transcription data, adding buffer: {new_end:.2f}s")
-        elif new_end == ai_end:
-            # No audio analysis available - use word-based protection only
-            if not mic_audio_path:
-                log_func(f"      ⚠️ No mic audio provided for vocalization detection")
-            elif not LIBROSA_AVAILABLE:
-                log_func(f"      ⚠️ librosa not available for vocalization detection")
-            
-            if parsed_words:
-                found_overlap = False
-                for (word_start, word_end, text) in parsed_words:
-                    if word_start <= ai_end < word_end:
-                        extension_needed = word_end - ai_end
-                        if extension_needed <= max_extension_seconds:
-                            new_end = word_end + buffer_seconds
-                        else:
-                            new_end = (ai_end + max_extension_seconds) + buffer_seconds
-                        found_overlap = True
-                        log_func(f"      📝 Protected word '{text}': extended to {new_end:.2f}s")
-                        break
-                
-                if not found_overlap:
-                    new_end = ai_end + buffer_seconds
-            else:
-                new_end = ai_end + buffer_seconds
 
         # Validate segment
         if new_start < new_end:

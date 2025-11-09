@@ -251,10 +251,11 @@ Only remove segments that are:
 **GUIDELINES:**
 1. ALWAYS keep the climax/payoff moment
 2. Preserve dialogue that sets up the payoff (from EITHER track)
-3. Keep player reactions - they're often the best part
-4. Segments should flow naturally - don't cut mid-sentence
-5. Aim for 15-60 seconds, but prioritize telling a complete story
-6. When in doubt, keep more dialogue rather than less
+3. **PRESERVE COMEDIC STRUCTURES:** Look for setup/repeat/payoff patterns. The *first* instance of an event (like a chase, a gag, or a failure) is essential context for the final punchline, even if it seems repetitive. **Do not cut this initial setup.**
+4. Keep player reactions - they're often the best part
+5. Segments should flow naturally - don't cut mid-sentence
+6. Aim for 15-60 seconds, but prioritize telling a complete story
+7. When in doubt, keep more dialogue rather than less
 
 **WHAT NOT TO DO:**
 - Don't cut silence if it's building tension (especially in horror)
