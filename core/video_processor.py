@@ -32,6 +32,9 @@ class VideoProcessor:
         suggested_title = None
         trim_segments = None
         DIALOGUE_TRIM_BUFFER = 0.5
+        
+        # ✅ NEW: Track mic audio path for vocalization detection
+        mic_audio_path_for_analysis = None
 
         try:
             log_func("="*60)
@@ -97,8 +100,8 @@ class VideoProcessor:
             title_details = title_generator.generate_title(
                 video_path=input_file,
                 shorts_analysis_path="shorts_analysis.json",
-                mic_transcriptions=mic_transcriptions_raw,      # Use RAW - closer to actual speech timing
-                desktop_transcriptions=desktop_transcriptions_raw  # Use RAW - closer to actual speech timing
+                mic_transcriptions=mic_transcriptions_raw,
+                desktop_transcriptions=desktop_transcriptions_raw
             )
 
             if title_details:
@@ -116,14 +119,11 @@ class VideoProcessor:
             if enable_trimming:
                 trimmer = IntelligentTrimmer(log_func=log_func)
                 
-                # Analyze with RAW dialogue context
-                # Gemini needs to understand WHEN things were said relative to video events
-                # Raw timestamps are Whisper's best guess at actual audio timing
                 trim_segments = trimmer.analyze_for_trim(
                     video_path=input_file,
                     title_details=title_details,
-                    mic_transcriptions=mic_transcriptions_raw,      # Use RAW for actual timing context
-                    desktop_transcriptions=desktop_transcriptions_raw  # Use RAW for actual timing context
+                    mic_transcriptions=mic_transcriptions_raw,
+                    desktop_transcriptions=desktop_transcriptions_raw
                 )
                 
                 if trim_segments:
@@ -160,7 +160,7 @@ class VideoProcessor:
             decision_timeline = director.analyze_video_and_create_timeline(
                 video_path=video_to_process, 
                 video_duration=video_duration, 
-                mic_transcription=mic_transcriptions_raw,  # Use RAW for timing context
+                mic_transcription=mic_transcriptions_raw,
                 audio_events=onomatopoeia_events, 
                 video_analysis_map=video_analysis_map
             )
@@ -183,8 +183,8 @@ class VideoProcessor:
             embed_subtitles(
                 input_video=video_to_subtitle, 
                 output_video=intermediate_with_subs,
-                track2_srt=mic_subtitle_path,  # These were created from ADJUSTED timestamps
-                track3_srt=desktop_subtitle_path,  # These were created from ADJUSTED timestamps
+                track2_srt=mic_subtitle_path,
+                track3_srt=desktop_subtitle_path,
                 onomatopoeia_srt=onomatopoeia_subtitle_path, 
                 onomatopoeia_events=onomatopoeia_events, 
                 log=log_func
@@ -196,21 +196,26 @@ class VideoProcessor:
             
             if enable_trimming and trim_segments:
                 log_func("   Applying trim plan to video with embedded subtitles...")
-                log_func(f"   Using RAW transcriptions for dialogue protection (conservative buffer)")
+                log_func(f"   Using RAW transcriptions + continuous vocalization detection")
                 log_func(f"   Extending trim segments with {DIALOGUE_TRIM_BUFFER}s buffer...")
                 
-                # Use RAW for buffer extension - more conservative
-                # If Whisper says dialogue at 45s but it's really at 50s,
-                # we want to protect the 45-50s range to be safe
+                # ✅ NEW: Extract mic audio specifically for vocalization detection
+                mic_audio_path_for_analysis = os.path.join(temp_dir, f"{os.path.basename(input_file)}_mic_analysis.wav")
+                if not core.transcriber.convert_to_audio(input_file, mic_audio_path_for_analysis, "a:1", log_func):
+                    log_func("   ⚠️ Could not extract mic audio for vocalization detection")
+                    mic_audio_path_for_analysis = None
+                
                 extended_trim_segments = extend_segments_for_dialogue(
                     trim_segments, 
-                    mic_transcriptions_raw,  # Use RAW for conservative dialogue protection
+                    mic_transcriptions_raw,
                     log_func,
                     max_extension_seconds=4.0,
-                    buffer_seconds=DIALOGUE_TRIM_BUFFER
+                    buffer_seconds=DIALOGUE_TRIM_BUFFER,
+                    mic_audio_path=mic_audio_path_for_analysis  # ✅ NEW: Pass mic audio
                 )
+                
                 log_func(f"   Original segments: {trim_segments}")
-                log_func(f"   Buffered segments: {extended_trim_segments}")
+                log_func(f"   Protected segments: {extended_trim_segments}")
                 
                 trimmer = IntelligentTrimmer(log_func=log_func)
                 
@@ -259,7 +264,8 @@ class VideoProcessor:
                 mic_subtitle_path, 
                 desktop_subtitle_path,
                 edited_video_path,
-                intermediate_with_subs
+                intermediate_with_subs,
+                mic_audio_path_for_analysis  # ✅ NEW: Clean up analysis audio
             ]
             for path in temp_files_to_clean:
                 if path and os.path.exists(path):
