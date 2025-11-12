@@ -204,6 +204,8 @@ Here is an analysis of my top-performing YouTube Shorts. Your title must match t
 
 8. **AVOID PROFANITY**: Do not include any direct curse words or allusions to them (e.g., "f---", "s**t"). The word "hell" is acceptable. Innuendo and suggestive humor are fine, but the final title must remain advertiser-friendly and avoid explicit language.
 
+9. **Avoid player names in the title unless you REALLY think it is necessary**
+
 === YOUR TASK ===
 Analyze the DIALOGUE FIRST (especially last 30 seconds), then the video frames. Create a title that captures the best moment - preferably derived from what was actually said.
 
