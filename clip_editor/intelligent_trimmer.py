@@ -2,7 +2,7 @@
 
 """
 Intelligent Clip Trimming System
-Uses Gemini to analyze entire video with dialogue context and decide what to cut.
+Uses Gemini to analyze entire video and decide what to cut in one pass.
 """
 
 from typing import List, Dict, Tuple, Optional
@@ -17,7 +17,8 @@ import time
 
 class IntelligentTrimmer:
     """
-    Analyzes entire video with Gemini and gets trimming decisions with dialogue awareness.
+    Analyzes entire video with Gemini and gets trimming decisions in one call.
+    Much simpler and more scalable than multi-step analysis.
     """
     
     def __init__(self, log_func=None):
@@ -25,19 +26,16 @@ class IntelligentTrimmer:
         self.vision_analyzer = GeminiVisionAnalyzer(log_func=self.log_func)
         
         # Configuration
-        self.max_clip_duration = 60.0
-        self.min_clip_duration = 15.0
+        self.max_clip_duration = 60.0  # Target maximum duration
+        self.min_clip_duration = 15.0  # Minimum to keep it worthwhile
 
     def analyze_for_trim(
         self,
         video_path: str,
-        title_details: Optional[Tuple[str, str, str]] = None,
-        mic_transcriptions: Optional[List[str]] = None,      # ✅ NEW
-        desktop_transcriptions: Optional[List[str]] = None   # ✅ NEW
+        title_details: Optional[Tuple[str, str, str]] = None
     ) -> List[Tuple[float, float]]:
         """
         Analyze video and return trim segments WITHOUT actually cutting.
-        Now includes dialogue context for better decisions.
         
         Returns:
             List of (start, end) time ranges to keep
@@ -49,10 +47,9 @@ class IntelligentTrimmer:
             
             video_duration = get_video_duration(video_path, self.log_func)
             
-            # Get trim decisions from Gemini with dialogue context
+            # Get trim decisions from Gemini
             segments_to_keep = self._call_gemini_for_trim_analysis(
-                video_path, video_duration, title_details,
-                mic_transcriptions, desktop_transcriptions  # ✅ NEW
+                video_path, video_duration, title_details
             )
             
             return segments_to_keep
@@ -72,64 +69,21 @@ class IntelligentTrimmer:
     ) -> bool:
         """
         Execute the trim plan on a video.
-        This is separate so it can be called after subtitle processing.
+        This is now separate so it can be called after subtitle processing.
         
         Returns:
             Success status
         """
         return self._apply_trim(input_video, output_video, segments_to_keep)
 
-    def _format_transcription_for_prompt(
-        self, 
-        transcriptions: List[str],
-        max_lines: int = 200
-    ) -> str:
-        """Format transcriptions with timestamps for Gemini."""
-        if not transcriptions:
-            return "No dialogue detected"
-        
-        # Parse and format
-        parsed = []
-        for line in transcriptions:
-            try:
-                time_part, text = line.split(':', 1)
-                start_str, end_str = time_part.split('-')
-                start_time = float(start_str)
-                text = text.strip()
-                parsed.append((start_time, text))
-            except:
-                continue
-        
-        if not parsed:
-            return "No valid dialogue"
-        
-        # Limit to max_lines
-        if len(parsed) > max_lines:
-            # Take beginning and end
-            begin = parsed[:max_lines//2]
-            end = parsed[-(max_lines//2):]
-            parsed = begin + [(-1, "... [middle section omitted] ...")] + end
-        
-        # Format with timestamps
-        formatted_lines = []
-        for timestamp, text in parsed:
-            if timestamp == -1:
-                formatted_lines.append(text)
-            else:
-                formatted_lines.append(f"[{timestamp:.1f}s] {text}")
-        
-        return "\n".join(formatted_lines)
-
     def _call_gemini_for_trim_analysis(
         self,
         video_path: str,
         video_duration: float,
-        title_details: Optional[Tuple[str, str, str]],
-        mic_transcriptions: Optional[List[str]],      # ✅ NEW
-        desktop_transcriptions: Optional[List[str]]   # ✅ NEW
+        title_details: Optional[Tuple[str, str, str]]
     ) -> List[Tuple[float, float]]:
         """
-        Upload video to Gemini and get trimming decisions with dialogue context.
+        Upload video to Gemini and get trimming decisions.
         """
         try:
             self.log_func("\n📤 Uploading video to Gemini for analysis...")
@@ -146,11 +100,8 @@ class IntelligentTrimmer:
             if video_file.state.name == "FAILED":
                 raise ValueError("Video upload failed")
             
-            # Build the prompt with dialogue context
-            prompt = self._build_trim_prompt(
-                video_duration, title_details,
-                mic_transcriptions, desktop_transcriptions  # ✅ NEW
-            )
+            # Build the prompt
+            prompt = self._build_trim_prompt(video_duration, title_details)
             
             # Call Gemini
             self.log_func("   Analyzing video for trim decisions...")
@@ -174,12 +125,10 @@ class IntelligentTrimmer:
     def _build_trim_prompt(
         self,
         video_duration: float,
-        title_details: Optional[Tuple[str, str, str]],
-        mic_transcriptions: Optional[List[str]],      # ✅ NEW
-        desktop_transcriptions: Optional[List[str]]   # ✅ NEW
+        title_details: Optional[Tuple[str, str, str]]
     ) -> str:
         """
-        Build the prompt for Gemini trim analysis with dialogue context.
+        Build the prompt for Gemini trim analysis.
         """
         title_context = ""
         if title_details:
@@ -191,28 +140,9 @@ class IntelligentTrimmer:
 - Why it's clip-worthy: {reasoning}
 """
         
-        # ✅ NEW: Format dialogue for prompt
-        mic_dialogue = "Not available"
-        game_dialogue = "Not available"
-        
-        if mic_transcriptions:
-            mic_dialogue = self._format_transcription_for_prompt(mic_transcriptions)
-            self.log_func(f"   Added {len(mic_transcriptions)} mic dialogue lines to prompt")
-        
-        if desktop_transcriptions:
-            game_dialogue = self._format_transcription_for_prompt(desktop_transcriptions)
-            self.log_func(f"   Added {len(desktop_transcriptions)} game dialogue lines to prompt")
-        
-        prompt = f"""You are an expert video editor for gaming content. Your goal is to make this clip PUNCHY and ENGAGING by removing boring/unnecessary parts while preserving the story.
+        prompt = f"""You are an expert video editor for gaming content. Your goal is to make this clip PUNCHY and ENGAGING by removing boring/unnecessary parts.
 
 {title_context}
-
-=== DIALOGUE CONTEXT (CRITICAL!) ===
-**PLAYER COMMENTARY (MY VOICE):**
-{mic_dialogue}
-
-**GAME AUDIO (NPCs/Events/Music):**
-{game_dialogue}
 
 **VIDEO INFO:**
 - Total Duration: {video_duration:.1f} seconds
@@ -221,65 +151,54 @@ class IntelligentTrimmer:
 
 **YOUR TASK - THREE STEPS:**
 
-**STEP 1: UNDERSTAND THE NARRATIVE**
-Using the dialogue above and watching the video:
-- What is the story arc? (tension building → payoff, setup → punchline, etc.)
-- Where exactly is the climax/payoff? (when the "thing" happens)
-- What dialogue is essential for understanding the payoff?
-- Are there call-and-response moments between player and game?
+**STEP 1: UNDERSTAND THE VIDEO**
+Watch the entire video and identify:
+- What type of moment is this? (jumpscare, funny reaction, unexpected event, clutch play, glitch, etc.)
+- What is the narrative structure? (tension building → payoff, setup → punchline, escalating chaos, etc.)
+- Where exactly is the climax/payoff? (timestamp when the "thing" happens)
+- What makes this clip-worthy? (refer to the title analysis context if provided)
 
-**STEP 2: IDENTIFY ESSENTIAL DIALOGUE**
-Look at the transcriptions and determine what the viewer NEEDS to hear:
-- Setup dialogue that provides context
-- Tension-building commentary
-- The punchline or reaction
-- Important NPC dialogue or game events
+**STEP 2: IDENTIFY ESSENTIAL ELEMENTS**
+Determine what the viewer NEEDS to see/hear:
+- What creates necessary context? (e.g., "why is the player entering this room?")
+- What builds tension or sets up the payoff? (silence before a jumpscare, dialogue before a punchline)
+- What dialogue or reactions are important? (funny commentary, scared reactions)
+- Are there natural "beats" or chapters in the clip?
 
-**CRITICAL DIALOGUE RULES:**
-- If player says something ironic before an event (e.g., "I'm not scared"), KEEP IT
-- If there's a conversation between player and game, keep both sides
-- Reactions are often more important than the event itself
-- Don't cut mid-sentence on EITHER track
+For horror clips: Remember that silence, slow pacing, or low activity might be ESSENTIAL for building tension before a jumpscare.
+
+For funny clips: The setup might seem mundane but could be necessary for the punchline to land.
 
 **STEP 3: DECIDE WHAT TO CUT**
 Only remove segments that are:
-- Pre-setup where nothing story-relevant is said or shown
-- Post-climax footage with no good follow-up dialogue
-- Repetitive commentary that doesn't advance the story
-- Dead time that doesn't build tension
+- Truly redundant (the same point is made multiple times)
+- Post-climax footage that adds nothing (unless there's a good reaction/follow-up)
+- Pre-setup footage where nothing relevant to the story is happening yet
+- Dead time that doesn't serve the pacing (long pauses that aren't building tension)
 
 **GUIDELINES:**
-1. ALWAYS keep the climax/payoff moment
-2. Preserve dialogue that sets up the payoff (from EITHER track)
-3. **PRESERVE COMEDIC STRUCTURES:** Look for setup/repeat/payoff patterns. The *first* instance of an event (like a chase, a gag, or a failure) is essential context for the final punchline, even if it seems repetitive. **Do not cut this initial setup.**
-4. Keep player reactions - they're often the best part
-5. Segments should flow naturally - don't cut mid-sentence
-6. Aim for 15-60 seconds, but prioritize telling a complete story
-7. When in doubt, keep more dialogue rather than less
+1. ALWAYS include the climax/payoff moment (this is non-negotiable)
+2. Preserve pacing that serves the narrative (tension-building, comedic timing, etc.)
+3. Keep dialogue that provides context or is inherently funny/interesting
+4. Segments should flow naturally - avoid cutting mid-sentence or mid-action
+5. Aim for 15-60 seconds total, but prioritize telling a complete story over hitting a specific duration
+6. When in doubt, keep more rather than less - it's better to be slightly long than to lose essential context
 
 **WHAT NOT TO DO:**
-- Don't cut silence if it's building tension (especially in horror)
-- Don't remove setup dialogue just because it seems boring
-- Don't cut between a question and its answer (either track)
-- Don't split up call-and-response moments
+- Don't cut silence or slow moments that are building tension (especially in horror)
+- Don't remove setup just because it seems boring - ask if it's necessary for the payoff
+- Don't cut to exactly 15 seconds if it would ruin the narrative flow
+- Don't remove reactions or follow-up moments if they add to the comedy/horror
 
 **OUTPUT FORMAT (JSON ONLY):**
 {{
-  "analysis": "Brief explanation referencing specific dialogue that makes this clip good",
+  "analysis": "Brief explanation of what makes this clip good and what you're cutting",
   "segments_to_keep": [
-    {{"start": 0.0, "end": 15.5, "reason": "Player says 'I'm not scared' - essential setup"}},
-    {{"start": 42.3, "end": 68.0, "reason": "The climax, scream, and follow-up commentary"}}
+    {{"start": 0.0, "end": 15.5, "reason": "Essential setup showing player entering area"}},
+    {{"start": 42.3, "end": 68.0, "reason": "The entire climax and punchline"}}
   ],
   "estimated_duration": 41.2,
-  "cuts_made": [
-    "Removed 15.5-42.3s: Walking with no dialogue or tension",
-    "Removed 68.0-end: Quiet aftermath with no interesting commentary"
-  ],
-  "dialogue_preserved": [
-    "[45s] 'I'm not scared'",
-    "[48s] 'OH MY GOD!'",
-    "[50s] 'That was terrifying'"
-  ]
+  "cuts_made": ["Removed 5-15s: repetitive walking", "Removed 15-42s: silent gameplay"]
 }}
 
 **IMPORTANT:**
@@ -287,9 +206,8 @@ Only remove segments that are:
 - Segments should be in chronological order
 - Don't overlap segments
 - Return ONLY the JSON, no extra text
-- Reference specific dialogue timestamps in your reasoning
 
-Now analyze this video with its dialogue and give me the trim decisions:"""
+Now analyze this video and give me the trim decisions:"""
         
         return prompt
     
@@ -315,13 +233,6 @@ Now analyze this video with its dialogue and give me the trim decisions:"""
             # Log the analysis
             analysis = data.get('analysis', 'No analysis provided')
             self.log_func(f"\n   Analysis: {analysis}")
-            
-            # Log preserved dialogue
-            preserved_dialogue = data.get('dialogue_preserved', [])
-            if preserved_dialogue:
-                self.log_func("\n   Key dialogue preserved:")
-                for dialogue in preserved_dialogue:
-                    self.log_func(f"   💬 {dialogue}")
             
             # Extract segments
             segments_data = data.get('segments_to_keep', [])
@@ -373,7 +284,6 @@ Now analyze this video with its dialogue and give me the trim decisions:"""
     ) -> bool:
         """
         Apply the actual video trim using FFmpeg.
-        (This method remains unchanged from your original)
         """
         try:
             self.log_func("\n✂️ Applying trim to video...")
@@ -382,19 +292,20 @@ Now analyze this video with its dialogue and give me the trim decisions:"""
             temp_dir = tempfile.gettempdir()
             segment_files = []
             
-            # Extract each segment with re-encoding
+            # Extract each segment with re-encoding to ensure compatibility
             for i, (start, end) in enumerate(segments_to_keep):
                 segment_file = os.path.join(temp_dir, f"trim_segment_{i:03d}.mp4")
                 
+                # Use re-encoding instead of copy to ensure clean segments
                 cmd = [
                     'ffmpeg', '-y',
-                    '-ss', str(start),
+                    '-ss', str(start),           # Seek BEFORE input for speed
                     '-i', input_video,
-                    '-to', str(end - start),
-                    '-c:v', 'libx264',
+                    '-to', str(end - start),     # Duration instead of end time
+                    '-c:v', 'libx264',           # Re-encode video
                     '-preset', 'fast',
-                    '-crf', '18',
-                    '-c:a', 'aac',
+                    '-crf', '18',                # High quality
+                    '-c:a', 'aac',               # Re-encode audio
                     '-b:a', '192k',
                     '-avoid_negative_ts', 'make_zero',
                     '-movflags', '+faststart',
@@ -412,7 +323,7 @@ Now analyze this video with its dialogue and give me the trim decisions:"""
                     segment_duration = end - start
                     self.log_func(f"   ✓ Extracted segment {i+1}/{len(segments_to_keep)} ({segment_duration:.1f}s)")
                 else:
-                    self.log_func(f"   ✗ Failed to extract segment {i+1}")
+                    self.log_func(f"   ✗ Failed to extract segment {i+1} - file too small or missing")
             
             if not segment_files:
                 self.log_func("❌ No segments extracted successfully")
@@ -426,10 +337,11 @@ Now analyze this video with its dialogue and give me the trim decisions:"""
                 self.log_func("   ✅ Single segment - copied directly")
                 return True
             
-            # Concatenate segments
+            # Concatenate segments using concat demuxer
             concat_list_file = os.path.join(temp_dir, "trim_concat_list.txt")
             with open(concat_list_file, 'w', encoding='utf-8') as f:
                 for seg_file in segment_files:
+                    # Escape single quotes and use absolute paths
                     seg_file_abs = os.path.abspath(seg_file)
                     seg_file_normalized = seg_file_abs.replace('\\', '/').replace("'", "'\\''")
                     f.write(f"file '{seg_file_normalized}'\n")
@@ -441,14 +353,14 @@ Now analyze this video with its dialogue and give me the trim decisions:"""
                 '-f', 'concat',
                 '-safe', '0',
                 '-i', concat_list_file,
-                '-c', 'copy',
+                '-c', 'copy',            # Now we can copy since all segments are same format
                 '-movflags', '+faststart',
                 output_video
             ]
             
             result = subprocess.run(cmd, capture_output=True, text=True)
             
-            # Cleanup
+            # Cleanup segment files
             for seg_file in segment_files:
                 try:
                     os.remove(seg_file)
@@ -460,11 +372,13 @@ Now analyze this video with its dialogue and give me the trim decisions:"""
                 pass
             
             if result.returncode == 0 and os.path.exists(output_video):
+                # Verify the output isn't corrupted
                 final_duration = get_video_duration(output_video, self.log_func)
                 expected_duration = sum(end - start for start, end in segments_to_keep)
                 
                 if final_duration < 1.0 or final_duration < expected_duration * 0.5:
-                    self.log_func(f"❌ Output suspiciously short: {final_duration:.1f}s (expected ~{expected_duration:.1f}s)")
+                    self.log_func(f"❌ Output video suspiciously short: {final_duration:.1f}s (expected ~{expected_duration:.1f}s)")
+                    self.log_func(f"   FFmpeg stderr: {result.stderr[-1000:]}")
                     return False
                 
                 self.log_func("   ✅ Video trim applied successfully")
