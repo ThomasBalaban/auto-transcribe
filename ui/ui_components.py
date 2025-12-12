@@ -69,10 +69,11 @@ class UISetup:
 
     @staticmethod
     def create_onomatopoeia_section(parent, app):
-        """Create the onomatopoeia settings section. Returns the containing frame and the variable."""
+        """Create the onomatopoeia settings section. Returns the frame, var, and slider."""
         onomatopoeia_frame = ctk.CTkFrame(parent)
         ctk.CTkLabel(onomatopoeia_frame, text="Onomatopoeia (Comic Book Effects):", font=("Arial", 12, "bold")).pack(anchor="w", padx=5, pady=(5,0))
 
+        # Animation Settings
         animation_row = ctk.CTkFrame(onomatopoeia_frame)
         animation_row.pack(fill="x", padx=20, pady=5)
 
@@ -90,8 +91,27 @@ class UISetup:
             variable=animation_var,
             width=150
         ).pack(side="left", padx=5, pady=5)
+        
+        # Sync Offset Slider
+        sync_row = ctk.CTkFrame(onomatopoeia_frame)
+        sync_row.pack(fill="x", padx=20, pady=5)
+        
+        ctk.CTkLabel(sync_row, text="Sync Offset (s):").pack(side="left", padx=5)
+        
+        # Default -0.15 for M4 Mac drift
+        sync_slider = ctk.CTkSlider(sync_row, from_=-0.5, to=0.5, number_of_steps=20)
+        sync_slider.set(-0.15) 
+        sync_slider.pack(side="left", fill="x", expand=True, padx=10)
+        
+        sync_value_label = ctk.CTkLabel(sync_row, text="-0.15s")
+        sync_value_label.pack(side="left", padx=5)
+        
+        def update_label(value):
+            sync_value_label.configure(text=f"{value:.2f}s")
+            
+        sync_slider.configure(command=update_label)
 
-        return onomatopoeia_frame, animation_var
+        return onomatopoeia_frame, animation_var, sync_slider
 
     @staticmethod
     def create_progress_section(parent):
@@ -142,7 +162,7 @@ class TestDialogs:
             from onomatopoeia_detector import OnomatopoeiaDetector
             detector = OnomatopoeiaDetector(log_func=app.log)
             app.log("✅ Onomatopoeia System: OPERATIONAL")
-            import torch
+            import torch # type: ignore
             if torch.backends.mps.is_available():
                 app.log("✅ GPU (Mac MPS): Available")
             elif torch.cuda.is_available():

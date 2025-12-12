@@ -100,6 +100,7 @@ class VideoEditor:
             self._extract_plain_segment(input_video, output_file, segment)
             return
 
+        # Uses CRF 10 for intermediate high quality
         cmd = [
             "ffmpeg", "-y",
             "-i", input_video,                  # accurate seek
@@ -108,7 +109,7 @@ class VideoEditor:
             "-filter_complex", filter_str,
             "-map", "[output]",
             "-map", "0:a?", "-c:a", "copy",     # keep your audio track(s) as-is
-            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "10", 
             "-pix_fmt", "yuv420p",
             "-reset_timestamps", "1",
             "-avoid_negative_ts", "make_zero",
@@ -252,7 +253,7 @@ class VideoEditor:
             "-filter_complex", filter_str,
             "-map", "[vout]",
             "-map", "0:a?", "-c:a", "copy",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "10", # CRF 10 for quality
             "-pix_fmt", "yuv420p",
             "-reset_timestamps", "1",
             "-avoid_negative_ts", "make_zero",
@@ -279,12 +280,14 @@ class VideoEditor:
                 concat_list.write(f"file '{f}'\n")
             concat_list.close()
 
+            # Final concat can use standard CRF 20, as it's the result passed to subtitle embedder
+            # But to be safe, let's keep it high quality until the very end
             cmd = [
                 "ffmpeg", "-y",
                 "-f", "concat", "-safe", "0",
                 "-i", concat_list.name,
                 "-fflags", "+genpts",
-                "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+                "-c:v", "libx264", "-preset", "fast", "-crf", "15", 
                 "-c:a", "aac", "-b:a", "192k",                # unify audio timing
                 "-pix_fmt", "yuv420p",
                 "-movflags", "+faststart",

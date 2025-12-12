@@ -84,7 +84,8 @@ class DualSubtitleApp:
         output_frame, self.output_dir_entry = UISetup.create_output_directory_section(frame, self)
         output_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
 
-        onomatopoeia_frame, self.animation_var = UISetup.create_onomatopoeia_section(frame, self)
+        # Added sync_slider to the returned tuple
+        onomatopoeia_frame, self.animation_var, self.sync_slider = UISetup.create_onomatopoeia_section(frame, self)
         onomatopoeia_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
 
         progress_frame, self.progress_label, self.progress_bar = UISetup.create_progress_section(frame)
@@ -253,6 +254,7 @@ class DualSubtitleApp:
             total_videos = len(self.input_files)
             self.log(f"Starting batch processing of {total_videos} videos...")
             animation_type = self.animation_var.get()
+            sync_offset = self.sync_slider.get() # Get sync offset
             detailed_logs = True  # Always enabled
 
             for i, (input_file, output_file) in enumerate(zip(self.input_files, self.output_files)):
@@ -275,6 +277,7 @@ class DualSubtitleApp:
                         input_file=input_file,
                         output_file=output_file,
                         animation_type=animation_type,
+                        sync_offset=sync_offset, # Pass sync offset
                         detailed_logs=detailed_logs,
                         log_func=self.log,
                         title_update_callback=title_callback

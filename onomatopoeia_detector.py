@@ -11,10 +11,7 @@ from utils.file_processor import FileProcessor
 
 
 class OnomatopoeiaDetector:
-    """
-    Cross‑modal onomatopoeia detection system with verification and
-    suppression logic.
-    """
+    """Cross‑modal onomatopoeia detection system."""
     VERIFY_WINDOW_SEC: float = 1.0
     NMS_RADIUS_SEC: float = 0.4
     COOLDOWN_SEC: float = 0.5
@@ -27,7 +24,6 @@ class OnomatopoeiaDetector:
         self._initialize_components()
         self.log_func("✅ Cross‑modal multimodal system ready!")
 
-
     def _initialize_components(self) -> None:
         self.onset_detector = GamingOnsetDetector(sensitivity=self.sensitivity, log_func=self.log_func)
         self.video_analyzer = GeminiVisionAnalyzer(log_func=self.log_func)
@@ -36,11 +32,10 @@ class OnomatopoeiaDetector:
         self.subtitle_generator = SubtitleGenerator(log_func=self.log_func)
         self.file_processor = FileProcessor(log_func=self.log_func)
 
-
-    def _analyze_video_file(self, video_path: str, animation_type: str) -> Tuple[List[Dict], Dict[float, Dict]]:
-        """ Analyzes the video and now returns both the final effects and the video analysis map. """
+    def _analyze_video_file(self, video_path: str, animation_type: str, sync_offset: float = -0.15) -> Tuple[List[Dict], Dict[float, Dict]]:
+        """ Analyzes the video with specific sync offset. """
         audio_path = None
-        video_map: Dict[float, Dict] = {} # Ensure video_map is initialized
+        video_map: Dict[float, Dict] = {}
         try:
             self.log_func(f"\n{'='*60}\nSTARTING CROSS‑MODAL ANALYSIS\n{'='*60}")
             audio_path = self.file_processor.extract_audio_from_video(video_path, track_index="a:2")
@@ -53,8 +48,9 @@ class OnomatopoeiaDetector:
             verified_events = self._verify_and_filter_events(audio_events, video_map)
             if not verified_events: return [], video_map
 
+            # PASS SYNC OFFSET HERE
             final_effects = self.fusion_engine.process_multimodal_events(
-                verified_events, video_map, animation_type
+                verified_events, video_map, animation_type, sync_offset=sync_offset
             )
             
             optimized_effects = self.gaming_optimizer.apply_gaming_optimizations(final_effects)
@@ -86,14 +82,12 @@ class OnomatopoeiaDetector:
             self.event_history = self.event_history[-50:]
         return verified
 
-
     def _create_synchronized_video_analysis(self, video_path: str, audio_events: List[Dict]) -> Dict[float, Dict]:
         groups = self._group_nearby_events(audio_events, 0.5)
         video_map: Dict[float, Dict] = {}
         for group in groups:
             primary_event = max(group, key=lambda e: e.get('energy', 0))
             t = primary_event['time']
-            # This is the single Gemini API call per group of events
             analysis = self.video_analyzer.analyze_video_at_timestamps(video_path, [primary_event])
             if analysis:
                 for evt in group:
@@ -114,9 +108,8 @@ class OnomatopoeiaDetector:
         groups.append(current_group)
         return groups
 
-
     def create_subtitle_file(self, input_path: str, output_path: str, animation_type: str = "Random") -> Tuple[bool, List[Dict], Dict[float, Dict]]:
-        """ Public API to generate subtitle file. Now returns the video_map as well. """
+        """ Public API. NOTE: sync_offset must be set via analyze_file if used directly. """
         try:
             events, video_map = self.analyze_file(input_path, animation_type)
             if not events:
@@ -128,10 +121,10 @@ class OnomatopoeiaDetector:
             self.log_func(f"Error creating subtitle file: {e}")
             return False, [], {}
 
-    def analyze_file(self, input_path: str, animation_type: str) -> Tuple[List[Dict], Dict[float, Dict]]:
-        """ Main analysis entry point, now returns events and the video_map. """
+    def analyze_file(self, input_path: str, animation_type: str, sync_offset: float = -0.15) -> Tuple[List[Dict], Dict[float, Dict]]:
+        """ Main analysis entry point. """
         file_type = self.file_processor.detect_file_type(input_path)
         if file_type == 'video':
-            return self._analyze_video_file(input_path, animation_type)
+            return self._analyze_video_file(input_path, animation_type, sync_offset)
         self.log_func(f"Unsupported file type for this analysis: {input_path}")
         return [], {}

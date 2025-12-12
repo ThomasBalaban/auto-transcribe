@@ -73,10 +73,12 @@ def embed_subtitles(input_video, output_video, track2_srt, track3_srt, onomatopo
     video_filter = ",".join(filter_parts)
 
     # Construct the final ffmpeg command
+    # Use CRF 10 to maintain high quality before the final trim
     cmd_embed = [
         'ffmpeg', '-y',
         '-i', input_video,
         '-vf', video_filter,
+        '-c:v', 'libx264', '-preset', 'fast', '-crf', '10',
         '-c:a', 'copy',
         output_video
     ]
