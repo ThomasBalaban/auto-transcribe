@@ -1,5 +1,9 @@
 # main.py
 import os
+
+os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
+os.environ["GRPC_POLL_STRATEGY"] = "poll"
+
 import threading
 import queue
 import customtkinter as ctk # type: ignore
