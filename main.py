@@ -9,6 +9,8 @@ import queue
 import customtkinter as ctk # type: ignore
 import traceback
 import json
+import datetime
+import sys
 from tkinter import filedialog, messagebox
 
 from ui.ui_components import UISetup, TestDialogs
@@ -27,10 +29,24 @@ class DualSubtitleApp:
         self.output_files = []
         self.generated_titles = []
         self.file_indices = []
+        
+        # Logging variables
+        self.session_log_path = None
+        
+        # Setup crash handling for GUI main loop
+        self.root.report_callback_exception = self.handle_gui_exception
+        
         self.setup_ui()
         self.root.after(100, self.process_log_messages)
         self.load_window_geometry()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def handle_gui_exception(self, exc_type, exc_value, exc_traceback):
+        """Catches and logs errors that occur in the GUI event loop."""
+        error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        full_msg = f"\n❌ CRITICAL APP CRASH (GUI):\n{error_msg}\n"
+        print(full_msg) # Print to console
+        self.log(full_msg) # Log to file/ui
 
     def save_window_geometry(self):
         try:
@@ -81,7 +97,17 @@ class DualSubtitleApp:
         log_frame.grid(row=5, column=0, sticky="nsew", padx=5, pady=5)
 
     def log(self, message):
+        """Logs message to UI and to the session log file if active."""
+        # 1. Send to UI
         self.message_queue.put(message + "\n")
+        
+        # 2. Send to Log File
+        if self.session_log_path:
+            try:
+                with open(self.session_log_path, "a", encoding="utf-8") as f:
+                    f.write(message + "\n")
+            except Exception as e:
+                print(f"Failed to write to log file: {e}")
 
     def process_log_messages(self):
         try:
@@ -132,7 +158,7 @@ class DualSubtitleApp:
     def clear_all_files(self):
         self.input_files = []
         self.output_files = []
-        self.generated_titles = []
+        self.generated_titles.pop()
         self._refresh_files_display()
 
     def _refresh_files_display(self, completed_index=-1):
@@ -201,6 +227,23 @@ class DualSubtitleApp:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
         
+        # --- SETUP LOGGING ---
+        try:
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+            self.session_log_path = os.path.join(output_dir, f"{timestamp}.txt")
+            
+            with open(self.session_log_path, "w", encoding="utf-8") as f:
+                f.write(f"--- BATCH PROCESSING STARTED: {timestamp} ---\n")
+                f.write(f"Target Directory: {output_dir}\n")
+                f.write(f"Files Queued: {len(self.input_files)}\n")
+                f.write("="*60 + "\n\n")
+            
+            self.log(f"📄 Detailed log will be saved to: {self.session_log_path}")
+        except Exception as e:
+            self.log(f"⚠️ Warning: Could not create log file: {e}")
+            self.session_log_path = None
+        # ---------------------
+
         self.process_button.configure(state="disabled", text="Processing...")
         self.processing_active = True
         threading.Thread(target=self.process_all_videos, daemon=True).start()
@@ -227,17 +270,31 @@ class DualSubtitleApp:
                     self.generated_titles[i] = title
                     self.root.after(0, self._refresh_files_display)
 
-                final_path, suggested_title = VideoProcessor.process_single_video(
-                    input_file=input_file,
-                    output_file=output_file,
-                    animation_type=animation_type,
-                    detailed_logs=detailed_logs,
-                    log_func=self.log,
-                    title_update_callback=title_callback
-                )
-                
-                self.output_files[i] = final_path
-                self.generated_titles[i] = suggested_title
+                try:
+                    final_path, suggested_title = VideoProcessor.process_single_video(
+                        input_file=input_file,
+                        output_file=output_file,
+                        animation_type=animation_type,
+                        detailed_logs=detailed_logs,
+                        log_func=self.log,
+                        title_update_callback=title_callback
+                    )
+                    
+                    self.output_files[i] = final_path
+                    self.generated_titles[i] = suggested_title
+
+                    # --- SUCCESS LOGGING ---
+                    input_name = os.path.basename(input_file)
+                    output_name = os.path.basename(final_path)
+                    success_msg = f"SUCCESS: '{input_name}' -> '{output_name}'"
+                    self.log("\n" + "*"*60)
+                    self.log(success_msg)
+                    self.log("*"*60 + "\n")
+                    # -----------------------
+
+                except Exception as file_error:
+                    self.log(f"❌ ERROR processing file {os.path.basename(input_file)}: {file_error}")
+                    self.log(traceback.format_exc())
 
                 def update_ui_on_completion():
                     self.progress_bar.set((i + 1) / total_videos)
@@ -248,11 +305,17 @@ class DualSubtitleApp:
                 self.progress_label.configure(text=f"All {total_videos} videos processed!")
                 self.process_button.configure(state="normal", text="Process All Videos")
                 messagebox.showinfo("Processing Complete", f"All {total_videos} videos processed!")
+                if self.session_log_path:
+                    self.log(f"Log file saved: {self.session_log_path}")
+                    
             self.root.after(0, finalize_ui)
 
         except Exception as e:
-            self.log(f"FATAL ERROR during batch processing: {e}")
+            # Catch unexpected thread crashes
+            crash_msg = f"🔥 FATAL BATCH PROCESSING CRASH: {e}"
+            self.log(crash_msg)
             self.log(traceback.format_exc())
+            
             def reset_ui_on_error():
                 self.progress_label.configure(text="Error! See log.")
                 self.process_button.configure(state="normal", text="Process All Videos")
