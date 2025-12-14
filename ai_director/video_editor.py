@@ -140,16 +140,18 @@ class VideoEditor:
         """
         Recursive logic: If frame 0, force 1.5. Else, PreviousZoom + step.
         Guarantees start at 1.5 regardless of timestamps.
+        
+        UPDATED: Slowed down zoom rate by 50% (step 0.075 instead of 0.15)
         """
         if duration <= 0:
             return "[0:v]scale=1080:1920,format=yuv420p[output]"
 
         total_frames = max(1, duration * 60)
         
-        # 1.50 -> 1.65 (Difference 0.15)
-        step = 0.15 / total_frames
+        # 1.50 -> 1.575 (Difference 0.075 - 50% of original)
+        step = 0.075 / total_frames
         
-        z_expr = f"min(1.65,if(eq(on,0),1.5,pzoom+{step:.6f}))"
+        z_expr = f"min(1.575,if(eq(on,0),1.5,pzoom+{step:.6f}))"
 
         return (
             "[0:v]setpts=PTS-STARTPTS,"
@@ -185,21 +187,24 @@ class VideoEditor:
         """
         Classic Blur + Scale Out Effect.
         Background: Blurred and darkened copy of video.
-        Foreground: Scales from 0.8 (80%) down to 0.7 (70%).
-        Uses 'n' (frame count) for rock-solid stability.
+        Foreground: Scales from 0.8 (80%) down to 0.75 (75%).
+        Uses 'n' (frame count) for stability.
+        
+        UPDATED: Slowed down zoom out rate by 50% (0.05 change instead of 0.1)
         """
         if duration <= 0:
             return "[0:v]scale=1080:1920,format=yuv420p[output]"
 
         total_frames = max(1, duration * 60)
         
-        # Start Scale: 0.8 (Starts "shrunken" like screenshot)
-        # End Scale: 0.7 (Slowly zooms out further)
-        # Total Change: 0.1
+        # Start Scale: 0.8 (Starts "shrunken")
+        # End Scale: 0.75 (Very slow pull back)
+        # Total Change: 0.05 (was 0.1)
         
-        # Expression: 0.8 - (0.1 * n / total_frames)
+        # Expression: 0.8 - (0.05 * n / total_frames)
+        scale_expr = f"(0.8-(0.05*n/{int(total_frames)}))"
+        
         # We wrap dimensions in 2*trunc(.../2) to ensure EVEN numbers for YUV420p
-        scale_expr = f"(0.8-(0.1*n/{int(total_frames)}))"
         w_expr = f"2*trunc(iw*{scale_expr}/2)"
         h_expr = f"2*trunc(ih*{scale_expr}/2)"
 
