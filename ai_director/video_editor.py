@@ -134,7 +134,7 @@ class VideoEditor:
             self._extract_plain_segment(input_video, output_file, segment)
 
 
-    # ========== ANIMATION FILTERS (RECURSIVE PZOOM) ==========
+    # ========== ANIMATION FILTERS (RECURSIVE ZOOMPAN + SCALE OVERLAY) ==========
 
     def _create_param_cam_zoom_filter(self, duration: float) -> str:
         """
@@ -183,28 +183,39 @@ class VideoEditor:
 
     def _create_param_zoom_out_filter(self, duration: float) -> str:
         """
-        Pull Back Effect: Cut to 1.25x zoom, then pull back to 1.0x.
-        Increased start zoom (1.25) so it is visually distinct.
+        Classic Blur + Scale Out Effect.
+        Background: Blurred and darkened copy of video.
+        Foreground: Scales from 0.8 (80%) down to 0.7 (70%).
+        Uses 'n' (frame count) for rock-solid stability.
         """
         if duration <= 0:
             return "[0:v]scale=1080:1920,format=yuv420p[output]"
 
         total_frames = max(1, duration * 60)
         
-        # 1.25 -> 1.0 (Difference 0.25)
-        step = 0.25 / total_frames
+        # Start Scale: 0.8 (Starts "shrunken" like screenshot)
+        # End Scale: 0.7 (Slowly zooms out further)
+        # Total Change: 0.1
         
-        # max(1.0, ...) to prevent crashing if it dips below 1.0
-        z_expr = f"max(1.0,if(eq(on,0),1.25,pzoom-{step:.6f}))"
-        
-        # Center coordinates
-        x_expr = "(iw-iw/zoom)/2"
-        y_expr = "(ih-ih/zoom)/2"
+        # Expression: 0.8 - (0.1 * n / total_frames)
+        # We wrap dimensions in 2*trunc(.../2) to ensure EVEN numbers for YUV420p
+        scale_expr = f"(0.8-(0.1*n/{int(total_frames)}))"
+        w_expr = f"2*trunc(iw*{scale_expr}/2)"
+        h_expr = f"2*trunc(ih*{scale_expr}/2)"
 
         return (
-            "[0:v]setpts=PTS-STARTPTS,"
-            f"zoompan=z='{z_expr}':x='{x_expr}':y='{y_expr}':d=1:s=1080x1920:fps=60,"
-            "format=yuv420p[output]"
+            # 1. Split input into Foreground (fg) and Background (bg)
+            "[0:v]setpts=PTS-STARTPTS,scale=1080:1920,split[fg_in][bg_in];"
+            
+            # 2. Prepare Background: Blur it heavily + Darken slightly
+            "[bg_in]boxblur=40:5,eq=brightness=-0.1[bg];"
+            
+            # 3. Scale Foreground: Use 'eval=frame' to update size every frame based on 'n'
+            f"[fg_in]scale=w='{w_expr}':h='{h_expr}':eval=frame[fg_scaled];"
+            
+            # 4. Overlay: Center the scaled foreground on the blurred background
+            "[bg][fg_scaled]overlay=x='(W-w)/2':y='(H-h)/2',"
+            "fps=60,format=yuv420p[output]"
         )
 
     # ========== PLAIN SEGMENT, CONCAT, UTILITIES ==========
