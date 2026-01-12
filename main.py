@@ -1,5 +1,6 @@
 # main.py
 import os
+import re # Added for regex matching
 
 os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
 os.environ["GRPC_POLL_STRATEGY"] = "poll"
@@ -256,6 +257,9 @@ class DualSubtitleApp:
             animation_type = self.animation_var.get()
             sync_offset = self.sync_slider.get() # Get sync offset
             detailed_logs = True  # Always enabled
+            
+            # --- Collection for Metadata Batch File ---
+            batch_metadata_list = []
 
             for i, (input_file, output_file) in enumerate(zip(self.input_files, self.output_files)):
                 self.current_process_index = i
@@ -273,7 +277,8 @@ class DualSubtitleApp:
                     self.root.after(0, self._refresh_files_display)
 
                 try:
-                    final_path, suggested_title = VideoProcessor.process_single_video(
+                    # Update to receive the returned metadata
+                    final_path, suggested_title, single_metadata = VideoProcessor.process_single_video(
                         input_file=input_file,
                         output_file=output_file,
                         animation_type=animation_type,
@@ -285,6 +290,10 @@ class DualSubtitleApp:
                     
                     self.output_files[i] = final_path
                     self.generated_titles[i] = suggested_title
+                    
+                    # Add to batch collection if successful
+                    if single_metadata:
+                        batch_metadata_list.append(single_metadata)
 
                     # --- SUCCESS LOGGING ---
                     input_name = os.path.basename(input_file)
@@ -303,6 +312,42 @@ class DualSubtitleApp:
                     self.progress_bar.set((i + 1) / total_videos)
                     self._refresh_files_display(completed_index=i)
                 self.root.after(0, update_ui_on_completion)
+
+            # --- SAVE BATCH METADATA FILE (End of Batch) ---
+            if batch_metadata_list:
+                try:
+                    self.log("\n--- Saving Batch Metadata ---")
+                    
+                    # 1. Determine Root and Directory
+                    project_root = os.path.dirname(os.path.abspath(__file__))
+                    shorts_data_dir = os.path.join(project_root, "shorts_data")
+                    os.makedirs(shorts_data_dir, exist_ok=True)
+                    
+                    # 2. Find next index (starts at 1)
+                    max_index = 0
+                    try:
+                        existing_files = os.listdir(shorts_data_dir)
+                        for fname in existing_files:
+                            # Pattern: shorts_metadata_{number}.json
+                            match = re.match(r"shorts_metadata_(\d+)\.json", fname)
+                            if match:
+                                idx = int(match.group(1))
+                                if idx > max_index:
+                                    max_index = idx
+                    except Exception:
+                        pass # Directory might be empty or unreadable
+                    
+                    next_index = max_index + 1
+                    json_filename = f"shorts_metadata_{next_index}.json"
+                    json_path = os.path.join(shorts_data_dir, json_filename)
+                    
+                    # 3. Write file
+                    with open(json_path, 'w', encoding='utf-8') as f:
+                        json.dump(batch_metadata_list, f, indent=2, default=str)
+                        
+                    self.log(f"✅ Batch metadata saved to: {json_path}")
+                except Exception as meta_err:
+                    self.log(f"⚠️ Failed to save batch metadata: {meta_err}")
 
             def finalize_ui():
                 self.progress_label.configure(text=f"All {total_videos} videos processed!")

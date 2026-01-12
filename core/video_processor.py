@@ -3,6 +3,9 @@ import os
 import shutil
 import tempfile
 import gc
+import datetime
+import json
+from dataclasses import asdict
 
 from onomatopoeia_detector import OnomatopoeiaDetector
 import core.transcriber
@@ -31,7 +34,11 @@ class VideoProcessor:
         temp_dir = tempfile.gettempdir()
         final_output_path = output_file
         suggested_title = None
+        title_details = None
         trim_segments = None
+        decision_timeline = None
+        events = []
+        video_metadata = None # Holder for the return data
         DIALOGUE_TRIM_BUFFER = 1.2 
         
         mic_audio_path_for_analysis = None
@@ -131,29 +138,10 @@ class VideoProcessor:
             subtitle_ext = '.ass' if animation_type != "Static" else '.srt'
             onomatopoeia_subtitle_path = os.path.join(temp_dir, f"{os.path.basename(video_to_process)}_ono{subtitle_ext}")
             
-            # Pass sync offset implicitly via the fusion engine in the next update or pass to create_subtitle_file
-            # We need to manually inject the sync_offset into the fusion engine for this instance
-            detector.fusion_engine.sync_offset = sync_offset # Temporary injection if we didn't update signature
+            detector.fusion_engine.sync_offset = sync_offset 
             
-            # Since we didn't update the signature of create_subtitle_file to accept sync_offset, 
-            # we need to make sure the fusion engine uses it. 
-            # Let's override the analyze_file -> _analyze_video_file flow in OnomatopoeiaDetector
-            # OR better, update processing/multimodal_fusion.py to default to a property.
+            events, video_map = detector.analyze_file(input_file, animation_type, sync_offset=sync_offset)
             
-            # Actually, let's just pass it manually here by monkey-patching or updating the call if possible.
-            # In the file I provided for `processing/multimodal_fusion.py`, I added `sync_offset` to `process_multimodal_events`.
-            # So we need to update `OnomatopoeiaDetector._analyze_video_file` to pass it down.
-            
-            # For now, let's update OnomatopoeiaDetector on the fly in `onomatopoeia_detector.py`? 
-            # No, I didn't return an updated `onomatopoeia_detector.py`. 
-            # I WILL ADD `onomatopoeia_detector.py` TO THE LIST OF UPDATED FILES to handle this plumbing.
-            
-            events, video_map = detector.analyze_file(input_file, animation_type)
-            
-            # Apply sync offset manually to events if the detector didn't do it
-            # But wait, I can just update the detector file too. I will add it to the final response.
-            
-            # Let's assume detector handles it now.
             success = detector.subtitle_generator.create_subtitle_file(events, onomatopoeia_subtitle_path, animation_type)
             
             del detector
@@ -246,6 +234,24 @@ class VideoProcessor:
                     os.rename(output_file, new_output_path)
                     final_output_path = new_output_path
                     log_func(f"📁 Renamed to: {os.path.basename(final_output_path)}")
+            
+            # --- PHASE 9: Prepare Metadata (Filtered) ---
+            # DO NOT save here. Return to main.py for batch saving.
+            video_metadata = {
+                "file_info": {
+                    "original_filename": os.path.basename(input_file),
+                    "output_filename": os.path.basename(final_output_path),
+                    "processed_at": datetime.datetime.now().isoformat(),
+                    "original_duration": video_duration,
+                    "final_duration": get_video_duration(final_output_path, log_func) if os.path.exists(final_output_path) else None
+                },
+                "generated_metadata": {
+                    "title": suggested_title,
+                    "description": title_details[1] if title_details else None,
+                    "virality_reasoning": title_details[2] if title_details else None
+                }
+            }
+            log_func("✅ Metadata generated (queued for batch file)")
 
         except Exception as e:
             log_func(f"FATAL ERROR in VideoProcessor: {e}")
@@ -261,4 +267,5 @@ class VideoProcessor:
                     try: os.remove(p)
                     except: pass
 
-        return final_output_path, suggested_title
+        # Return metadata to Main for batch aggregation
+        return final_output_path, suggested_title, video_metadata
