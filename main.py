@@ -238,6 +238,12 @@ class DualSubtitleApp:
                 f.write(f"--- BATCH PROCESSING STARTED: {timestamp} ---\n")
                 f.write(f"Target Directory: {output_dir}\n")
                 f.write(f"Files Queued: {len(self.input_files)}\n")
+                
+                # List all files changing/processing at the top
+                f.write("Files to be processed:\n")
+                for i, (in_file, out_file) in enumerate(zip(self.input_files, self.output_files)):
+                    f.write(f"  {i+1}. {os.path.basename(in_file)} -> {os.path.basename(out_file)}\n")
+                    
                 f.write("="*60 + "\n\n")
             
             self.log(f"📄 Detailed log will be saved to: {self.session_log_path}")
