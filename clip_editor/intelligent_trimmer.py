@@ -171,6 +171,7 @@ class IntelligentTrimmer:
             self.log_func(f"❌ Gemini trim analysis failed: {e}")
             return []
     
+    
     def _build_trim_prompt(
         self,
         video_duration: float,
@@ -203,7 +204,7 @@ class IntelligentTrimmer:
             game_dialogue = self._format_transcription_for_prompt(desktop_transcriptions)
             self.log_func(f"   Added {len(desktop_transcriptions)} game dialogue lines to prompt")
         
-        prompt = f"""You are an expert video editor for gaming content. Your goal is to make this clip PUNCHY and ENGAGING by removing boring/unnecessary parts while preserving the story.
+        prompt = f"""You are an expert video editor for TikTok and YouTube Shorts. Your goal is to make this clip highly ENGAGING and DENSE by ruthlessly removing dead air, fluff, and unnecessary context.
 
 {title_context}
 
@@ -216,82 +217,52 @@ class IntelligentTrimmer:
 
 **VIDEO INFO:**
 - Total Duration: {video_duration:.1f} seconds
-- Target Duration: 15-60 seconds (shorter is better if it maintains impact)
-- Content Type: Gaming clips (often horror games with jumpscares or funny moments)
+- Target Duration: 15-45 seconds (Prioritize extremely fast pacing. Cut the fat.)
+- Content Type: Gaming clips (focus on funny moments, reactions, or jumpscares)
 
 **YOUR TASK - THREE STEPS:**
 
-**STEP 1: UNDERSTAND THE NARRATIVE**
-Using the dialogue above and watching the video:
-- What is the story arc? (tension building → payoff, setup → punchline, etc.)
-- Where exactly is the climax/payoff? (when the "thing" happens)
-- What dialogue is essential for understanding the payoff?
-- Are there call-and-response moments between player and game?
+**STEP 1: FIND THE CORE ARC**
+- What is the absolute minimum setup required for the payoff (the reaction/jumpscare/joke) to make sense?
 
-**STEP 2: IDENTIFY ESSENTIAL DIALOGUE**
-Look at the transcriptions and determine what the viewer NEEDS to hear:
-- Setup dialogue that provides context
-- Tension-building commentary
-- The punchline or reaction
-- Important NPC dialogue or game events
+**STEP 2: RUTHLESS CUTTING (REMOVE THE FLUFF)**
+Look at the transcriptions and determine what to CUT. BE RUTHLESS:
+- Cut ALL "dead air" where nothing is happening visually or audibly (e.g., long walks, menu navigation).
+- Cut repetitive or trailing commentary that drags on after the climax has finished. Stop the clip soon after the punchline or peak reaction.
+- If there is a pause of more than 2-3 seconds where nothing tension-building or funny happens, CUT IT. Jump cuts are highly encouraged to skip boring parts.
 
-**CRITICAL DIALOGUE RULES:**
-- If player says something ironic before an event (e.g., "I'm not scared"), KEEP IT
-- If there's a conversation between player and game, keep both sides
-- Reactions are often more important than the event itself
-- Don't cut mid-sentence on EITHER track
-
-**STEP 3: DECIDE WHAT TO CUT**
-Only remove segments that are:
-- Pre-setup where nothing story-relevant is said or shown
-- Post-climax footage with no good follow-up dialogue
-- Repetitive commentary that doesn't advance the story
-- Dead time that doesn't build tension
-
+**STEP 3: FINALIZE THE PLAN**
 **GUIDELINES:**
-1. ALWAYS keep the climax/payoff moment
-2. Preserve dialogue that sets up the payoff (from EITHER track)
-3. Keep player reactions - they're often the best part
-4. Segments should flow naturally - don't cut mid-sentence
-5. Aim for 15-60 seconds, but prioritize telling a complete story
-6. When in doubt, keep more dialogue rather than less
-
-**WHAT NOT TO DO:**
-- Don't cut silence if it's building tension (especially in horror)
-- Don't remove setup dialogue just because it seems boring
-- Don't cut between a question and its answer (either track)
-- Don't split up call-and-response moments
+1. Do not cut mid-sentence.
+2. It is highly encouraged to make multiple cuts (e.g., Keep 5s of setup -> Cut 15s of dead air -> Keep 10s of payoff and reaction).
+3. Density is key. Every single second you keep MUST be entertaining or absolutely necessary for context.
 
 **OUTPUT FORMAT (JSON ONLY):**
 {{
-  "analysis": "Brief explanation referencing specific dialogue that makes this clip good",
+  "analysis": "Brief explanation of what fluff was removed and why the clip is now dense and engaging",
   "segments_to_keep": [
-    {{"start": 0.0, "end": 15.5, "reason": "Player says 'I'm not scared' - essential setup"}},
-    {{"start": 42.3, "end": 68.0, "reason": "The climax, scream, and follow-up commentary"}}
+    {{"start": 0.0, "end": 8.5, "reason": "Essential setup dialogue"}},
+    {{"start": 28.2, "end": 40.0, "reason": "The climax and the immediate reaction"}}
   ],
-  "estimated_duration": 41.2,
+  "estimated_duration": 20.3,
   "cuts_made": [
-    "Removed 15.5-42.3s: Walking with no dialogue or tension",
-    "Removed 68.0-end: Quiet aftermath with no interesting commentary"
+    "Removed 8.5-28.2s: Long silence and walking",
+    "Removed 40.0-end: Boring trailing commentary"
   ],
   "dialogue_preserved": [
-    "[45s] 'I'm not scared'",
-    "[48s] 'OH MY GOD!'",
-    "[50s] 'That was terrifying'"
+    "[2s] 'Let's check this room'",
+    "[30s] 'OH MY GOD RUN'"
   ]
 }}
 
 **IMPORTANT:**
 - Timestamps should be in seconds (decimals OK)
 - Segments should be in chronological order
-- Don't overlap segments
 - Return ONLY the JSON, no extra text
-- Reference specific dialogue timestamps in your reasoning
-
-Now analyze this video with its dialogue and give me the trim decisions:"""
-        
+"""
         return prompt
-    
+
+
     def _parse_trim_response(
         self,
         response_text: str,
@@ -347,7 +318,7 @@ Now analyze this video with its dialogue and give me the trim decisions:"""
                 is_last_segment = (i == len(segments_data) - 1)
                 if is_last_segment:
                     original_end = end
-                    end = min(end + 1.5, video_duration)  # Add 1.5s buffer, capped at video duration
+                    end = min(end + 1, video_duration)  # Add 1.5s buffer, capped at video duration
                     if end > original_end:
                         self.log_func(f"   📏 Added 1.5s buffer to final segment: {original_end:.1f}s → {end:.1f}s")
                 

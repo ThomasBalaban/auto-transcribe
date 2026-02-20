@@ -39,7 +39,7 @@ class VideoProcessor:
         decision_timeline = None
         events = []
         video_metadata = None # Holder for the return data
-        DIALOGUE_TRIM_BUFFER = 1.2 
+        DIALOGUE_TRIM_BUFFER = 0.8
         
         mic_audio_path_for_analysis = None
         desktop_audio_path_for_analysis = None
@@ -202,7 +202,7 @@ class VideoProcessor:
                     raw_mic_transcriptions=mic_transcriptions_raw,
                     raw_desktop_transcriptions=desktop_transcriptions_raw,
                     log_func=log_func,
-                    max_extension_seconds=4.0,
+                    max_extension_seconds=3.0,
                     buffer_seconds=DIALOGUE_TRIM_BUFFER,
                     mic_audio_path=mic_audio_path_for_analysis,
                     desktop_audio_path=desktop_audio_path_for_analysis
