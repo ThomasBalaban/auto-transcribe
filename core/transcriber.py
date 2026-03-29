@@ -1,61 +1,76 @@
 # core/transcriber.py
+"""
+Transcription using OpenAI Whisper API for accurate word-level timestamps.
+Falls back to faster-whisper locally if the API is unavailable.
+"""
 
 import os
 import time
-import json
 import subprocess
-import sys
-import numpy as np  # type: ignore
-import whisperx # type: ignore
-from faster_whisper import WhisperModel  # type: ignore
-from utils.timestamp_processor import apply_duration_adjustments, fix_overlapping_timestamps
-from utils.hallucination_filter import filter_hallucinations, filter_hallucinations_with_whisperx_data
+import tempfile
+import numpy as np
 from typing import List, Tuple
 
-# Try importing WhisperX components with explicit error handling
+from utils.timestamp_processor import apply_duration_adjustments, fix_overlapping_timestamps
+from utils.hallucination_filter import filter_hallucinations
+
+# ── OpenAI client (primary) ──────────────────────────────────────────────────
 try:
-    from whisperx import load_align_model, align # type: ignore
-    WHISPERX_AVAILABLE = True
-except ImportError as e:
-    print(f"WhisperX import error: {e}")
-    WHISPERX_AVAILABLE = False
+    from openai import OpenAI
+    _openai_available = True
+except ImportError:
+    _openai_available = False
+    print("⚠️  [transcriber] 'openai' package not installed — "
+          "run: pip install openai   (will use local Whisper instead)")
 
-log_box = None
+# ── Local Whisper fallback ────────────────────────────────────────────────────
+try:
+    from faster_whisper import WhisperModel
+    _local_whisper_available = True
+except ImportError:
+    _local_whisper_available = False
 
-def set_log_box(log_widget):
-    global log_box
-    log_box = log_widget
+# ── WhisperX alignment (only used in fallback path) ──────────────────────────
+try:
+    from whisperx import load_align_model, align
+    _whisperx_available = True
+except ImportError:
+    _whisperx_available = False
 
-def log(message):
-    if log_box:
-        log_box.insert("end", message + "\n")
-        log_box.see("end")
-    else:
-        print(message.encode('utf-8', errors='replace').decode('utf-8'))
 
-def load_model(model_path, device, log_func):
-    log_func(f"Loading Whisper model {model_path} on {device}...")
+def _get_openai_client(log_func=None):
+    """Initialise OpenAI client from config. Logs the failure reason if it can't."""
+    _log = log_func or print
     try:
-        compute_type = "float32"
-        if device == "cuda":
-            compute_type = "float16"
-
-        model = WhisperModel(model_path, device=device, compute_type=compute_type)
-        return model
+        from utils.config import get_openai_api_key
+        key = get_openai_api_key()
+        if not key:
+            _log("⚠️  OPENAI_API_KEY is empty in config.json — falling back to local Whisper")
+            return None
+        return OpenAI(api_key=key)
+    except FileNotFoundError:
+        _log("⚠️  config.json not found — falling back to local Whisper")
+        return None
     except Exception as e:
-        log_func(f"Error loading model: {e}")
-        raise
+        _log(f"⚠️  Could not load OpenAI client: {e} — falling back to local Whisper")
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public helpers (unchanged interface)
+# ─────────────────────────────────────────────────────────────────────────────
 
 def convert_to_audio(input_file, output_file, track_index, log_func):
+    """Extract a single audio track to a 16 kHz mono WAV."""
     try:
-        # Find ffmpeg path
         ffmpeg_path = "ffmpeg"
         try:
-            # Use subprocess.POST for stdout/stderr to hide output unless error
-            subprocess.run(["which", "ffmpeg"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run(["which", "ffmpeg"], check=True,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except (subprocess.CalledProcessError, FileNotFoundError):
-            mac_paths = ["/usr/local/bin/ffmpeg", "/opt/homebrew/bin/ffmpeg", "/opt/local/bin/ffmpeg"]
-            for path in mac_paths:
+            for path in ["/usr/local/bin/ffmpeg",
+                         "/opt/homebrew/bin/ffmpeg",
+                         "/opt/local/bin/ffmpeg"]:
                 if os.path.exists(path):
                     ffmpeg_path = path
                     break
@@ -63,129 +78,240 @@ def convert_to_audio(input_file, output_file, track_index, log_func):
                 raise FileNotFoundError("ffmpeg not found.")
 
         log_func(f"Extracting audio track {track_index}...")
-
-        command = [
-            ffmpeg_path,
-            "-y",
+        cmd = [
+            ffmpeg_path, "-y",
             "-i", input_file,
             "-map", f"0:{track_index}",
             "-ar", "16000",
             "-ac", "1",
             "-c:a", "pcm_s16le",
-            output_file
+            output_file,
         ]
-
-        log_func(f"Running extraction command: {' '.join(command)}")
-        
-        result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
-
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                encoding="utf-8")
         if result.returncode != 0:
-            log_func(f"Extraction failed for track {track_index}. FFmpeg stderr:")
-            for line in result.stderr.splitlines():
-                log_func(f"  {line}")
+            log_func(f"Extraction failed for track {track_index}.")
             return False
-
         if not os.path.exists(output_file) or os.path.getsize(output_file) == 0:
-            log_func(f"Audio extraction failed to create a valid file for track {track_index}: {output_file}")
             return False
-
-        log_func(f"Audio extracted to {output_file} (size: {os.path.getsize(output_file)} bytes)")
+        log_func(f"Audio extracted ({os.path.getsize(output_file)} bytes)")
         return True
-
     except Exception as e:
-        log_func(f"Error converting video to audio: {e}")
-        import traceback
-        log_func(f"Traceback: {traceback.format_exc()}")
+        log_func(f"Error extracting audio: {e}")
         return False
-    
-def align_with_whisperx(audio_path, segments_list, device, language_code, log_func):
-    if not WHISPERX_AVAILABLE:
-        log_func("WhisperX not available. Skipping alignment.")
-        return None
-    try:
-        log_func(f"Loading WhisperX alignment model for language '{language_code}' on {device}...")
-        model_a, metadata = load_align_model(language_code=language_code, device=device)
-        whisperx_segments = [{"start": s.start, "end": s.end, "text": s.text} for s in segments_list]
-        log_func(f"Running WhisperX alignment on {len(whisperx_segments)} segments...")
-        alignment_result = align(whisperx_segments, model_a, metadata, audio_path, device, return_char_alignments=False)
-        return alignment_result["segments"]
-    except Exception as e:
-        log_func(f"WhisperX alignment failed: {e}")
-        return None
 
-def transcribe_audio(model_path, device, audio_path, include_timecodes, log_func, language, track_name="") -> Tuple[List[str], List[str]]:
+
+def _to_mp3_for_api(wav_path: str, log_func) -> str:
+    """
+    Convert WAV → MP3 so the file stays well under the 25 MB API limit.
+    Returns the new path; caller is responsible for cleanup.
+    """
+    mp3_path = wav_path.replace(".wav", "_api.mp3")
+    cmd = [
+        "ffmpeg", "-y", "-i", wav_path,
+        "-ac", "1", "-ar", "16000",
+        "-b:a", "64k",          # 64 kbps mono ≈ 0.5 MB/min – plenty for speech
+        mp3_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0 or not os.path.exists(mp3_path):
+        log_func("⚠️  MP3 conversion failed, will upload WAV directly")
+        return wav_path
+    size_mb = os.path.getsize(mp3_path) / 1_048_576
+    log_func(f"   Audio compressed to MP3: {size_mb:.1f} MB")
+    return mp3_path
+
+
+def _openai_transcribe(audio_path: str, language: str,
+                       is_mic_track: bool, track_name: str,
+                       log_func) -> List[str]:
+    """
+    Call the OpenAI Whisper API and return word-level timestamp strings.
+    Returns [] on any failure so the caller can fall back.
+    """
+    client = _get_openai_client(log_func)
+    if client is None:
+        return []  # reason already logged inside _get_openai_client
+
+    mp3_path = _to_mp3_for_api(audio_path, log_func)
+    temp_mp3_created = mp3_path != audio_path
+
     try:
-        start_time = time.time()
-        log_func(f"Starting transcription for {audio_path} ({track_name})")
+        file_size_mb = os.path.getsize(mp3_path) / 1_048_576
+        log_func(f"📤 Uploading to OpenAI Whisper ({file_size_mb:.1f} MB) …")
+
+        lang_code = "en" if language.lower() in ("english", "en") else language.lower()
+
+        with open(mp3_path, "rb") as f:
+            response = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=f,
+                language=lang_code,
+                response_format="verbose_json",
+                timestamp_granularities=["word"],
+            )
+
+        words = getattr(response, "words", None) or []
+        if not words:
+            log_func("⚠️  OpenAI returned no word-level timestamps")
+            return []
+
+        log_func(f"✅ OpenAI transcribed {len(words)} words for {track_name}")
+
+        transcriptions = []
+        for w in words:
+            text = w.word.strip()
+            if not text:
+                continue
+            if is_mic_track:
+                text = text.upper()
+            transcriptions.append(f"{w.start:.2f}-{w.end:.2f}: {text}")
+
+        return transcriptions
+
+    except Exception as e:
+        log_func(f"⚠️  OpenAI Whisper error: {e}")
+        return []
+    finally:
+        if temp_mp3_created and os.path.exists(mp3_path):
+            try:
+                os.remove(mp3_path)
+            except Exception:
+                pass
+
+
+def _local_transcribe(model_path: str, device: str,
+                      audio_path: str, language: str,
+                      is_mic_track: bool, track_name: str,
+                      log_func) -> List[str]:
+    """Local faster-whisper + optional WhisperX alignment fallback."""
+    if not _local_whisper_available:
+        log_func("❌ faster-whisper not installed and OpenAI path failed.")
+        return []
+
+    log_func(f"🔄 Using local Whisper model ({model_path}) for {track_name} …")
+    compute_type = "float16" if device == "cuda" else "float32"
+    model = WhisperModel(model_path, device=device, compute_type=compute_type)
+
+    lang = "en" if language.lower() in ("english", "en") else language.lower()
+    segments, info = model.transcribe(
+        audio_path, language=lang,
+        word_timestamps=True, beam_size=5,
+    )
+    segments_list = list(segments)
+
+    # Try WhisperX alignment
+    if _whisperx_available and segments_list:
+        try:
+            from whisperx import load_align_model, align as wx_align
+            model_a, metadata = load_align_model(
+                language_code=info.language, device=device)
+            wx_segs = [{"start": s.start, "end": s.end, "text": s.text}
+                       for s in segments_list]
+            aligned = wx_align(wx_segs, model_a, metadata,
+                               audio_path, device,
+                               return_char_alignments=False)
+            aligned_segs = aligned["segments"]
+            log_func(f"   WhisperX alignment done for {track_name}")
+
+            transcriptions = []
+            for seg in aligned_segs:
+                for w in seg.get("words", []):
+                    text = w["word"].strip()
+                    if not text:
+                        continue
+                    if is_mic_track:
+                        text = text.upper()
+                    transcriptions.append(
+                        f"{w['start']:.2f}-{w['end']:.2f}: {text}")
+            return transcriptions
+        except Exception as e:
+            log_func(f"   WhisperX alignment failed ({e}), using raw timestamps")
+
+    # Raw faster-whisper output
+    transcriptions = []
+    for seg in segments_list:
+        for w in (seg.words or []):
+            text = w.word.strip()
+            if not text:
+                continue
+            if is_mic_track:
+                text = text.upper()
+            transcriptions.append(f"{w.start:.2f}-{w.end:.2f}: {text}")
+    return transcriptions
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main entry point (matches original signature)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def transcribe_audio(
+    model_path: str,
+    device: str,
+    audio_path: str,
+    include_timecodes: bool,
+    log_func,
+    language: str,
+    track_name: str = "",
+) -> Tuple[List[str], List[str]]:
+    """
+    Transcribe audio to word-level timestamp strings.
+
+    Priority:  OpenAI Whisper API  →  local faster-whisper + WhisperX
+
+    Returns:
+        (raw_for_trimming, adjusted_for_subtitles)
+    """
+    try:
+        log_func(f"\nStarting transcription: {track_name}")
 
         if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
-            log_func(f"ERROR: Audio file is invalid: {audio_path}")
+            log_func(f"ERROR: Invalid audio file: {audio_path}")
             return [], []
 
-        model = load_model(model_path=model_path, device=device, log_func=log_func)
         is_mic_track = "mic" in track_name.lower() or "track 2" in track_name.lower()
 
-        log_func("Transcribing with Whisper...")
-        segments, info = model.transcribe(
-            audio_path,
-            language=language.lower() if language != "English" else "en",
-            word_timestamps=True,
-            beam_size=5
-        )
-
-        segments_list = list(segments)
-        log_func(f"Found {len(segments_list)} segments.")
-
-        use_whisperx = False
-        if WHISPERX_AVAILABLE and segments_list:
-            aligned_segments = align_with_whisperx(audio_path, segments_list, device, info.language, log_func)
-            if aligned_segments:
-                log_func(f"Using WhisperX aligned segments for {track_name}")
-                aligned_segments = filter_hallucinations_with_whisperx_data(aligned_segments, audio_path, track_name, log_func)
-                use_whisperx = True
-            else:
-                log_func(f"WhisperX alignment failed, using original timestamps for {track_name}")
-        
+        # ── 1. Try OpenAI API ─────────────────────────────────────────────
         transcriptions = []
-        if use_whisperx:
-            for segment in aligned_segments:
-                if 'words' not in segment: continue
-                for word in segment["words"]:
-                    word_text = word["word"].upper() if is_mic_track else word["word"]
-                    transcriptions.append(f"{word['start']:.2f}-{word['end']:.2f}: {word_text}")
+        if not _openai_available:
+            log_func("⚠️  OpenAI package not installed — using local Whisper "
+                     "(run: pip install openai  to enable the API path)")
         else:
-            for segment in segments_list:
-                if not segment.words: continue
-                for word in segment.words:
-                    word_text = word.word.upper() if is_mic_track else word.word
-                    transcriptions.append(f"{word.start:.2f}-{word.end:.2f}: {word_text}")
+            log_func(f"🌐 Attempting OpenAI Whisper API for {track_name} …")
+            transcriptions = _openai_transcribe(
+                audio_path, language, is_mic_track, track_name, log_func)
 
-        log_func(f"Processed {len(transcriptions)} words for {track_name}.")
-        
-        raw_transcriptions_for_trimming = []
-        adjusted_transcriptions_for_subtitles = []
+        # ── 2. Fall back to local model ───────────────────────────────────
+        if not transcriptions:
+            log_func(f"🔄 Falling back to local Whisper for {track_name} …")
+            transcriptions = _local_transcribe(
+                model_path, device, audio_path,
+                language, is_mic_track, track_name, log_func)
 
-        if include_timecodes and transcriptions:
-             if not use_whisperx:
-                  transcriptions = filter_hallucinations(transcriptions, audio_path, track_name, log_func)
-             
-             list_for_trimming = list(transcriptions)
-             list_for_subs = list(transcriptions)
+        if not transcriptions:
+            log_func(f"⚠️  No transcription produced for {track_name}")
+            return [], []
 
-             raw_transcriptions_for_trimming = fix_overlapping_timestamps(list_for_trimming)
-             
-             adjusted_transcriptions_for_subtitles = apply_duration_adjustments(list_for_subs, track_name, log_func)
-             adjusted_transcriptions_for_subtitles = fix_overlapping_timestamps(adjusted_transcriptions_for_subtitles)
+        log_func(f"   Raw words: {len(transcriptions)}")
 
-        else:
-            raw_transcriptions_for_trimming = list(transcriptions)
-            adjusted_transcriptions_for_subtitles = list(transcriptions)
+        if not include_timecodes:
+            return list(transcriptions), list(transcriptions)
 
-        return raw_transcriptions_for_trimming, adjusted_transcriptions_for_subtitles
+        # ── 3. Hallucination filter ───────────────────────────────────────
+        transcriptions = filter_hallucinations(
+            transcriptions, audio_path, track_name, log_func)
+
+        raw_for_trimming = fix_overlapping_timestamps(list(transcriptions))
+
+        adjusted = apply_duration_adjustments(
+            list(transcriptions), track_name, log_func)
+        adjusted_for_subs = fix_overlapping_timestamps(adjusted)
+
+        return raw_for_trimming, adjusted_for_subs
 
     except Exception as e:
-        log_func(f"Error in transcription process: {e}")
+        log_func(f"Error in transcription: {e}")
         import traceback
-        log_func(f"Transcription traceback: {traceback.format_exc()}")
-        error_list = [f"0.0-5.0: Transcription error: {str(e)}"]
-        return error_list, error_list
+        log_func(traceback.format_exc())
+        err = [f"0.0-5.0: Transcription error: {e}"]
+        return err, err
