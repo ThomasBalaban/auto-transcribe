@@ -22,6 +22,8 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 PORT = 8020
+# Same file the hub launcher reads/writes — single source of truth
+SETTINGS_FILE = os.path.join(_HERE, "..", "youtube_hub", "hub_settings.json")
 
 # ─── Shared state ─────────────────────────────────────────────────────────────
 
@@ -37,6 +39,36 @@ _processing = False
 _stop_requested = False
 _current_index = -1
 _lock = threading.Lock()
+
+
+def _load_settings() -> None:
+    """Load persisted settings from hub_settings.json if it exists."""
+    if not os.path.exists(SETTINGS_FILE):
+        return
+    try:
+        import json
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        # Only restore keys that are still valid settings
+        for k in _settings:
+            if k in saved:
+                _settings[k] = saved[k]
+        print(f"[settings] Loaded from {SETTINGS_FILE}", flush=True)
+    except Exception as e:
+        print(f"[settings] Could not load {SETTINGS_FILE}: {e}", flush=True)
+
+
+def _save_settings() -> None:
+    """Persist current settings to hub_settings.json."""
+    try:
+        import json
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(_settings, f, indent=2)
+    except Exception as e:
+        print(f"[settings] Could not save {SETTINGS_FILE}: {e}", flush=True)
+
+
+_load_settings()
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -294,6 +326,7 @@ def post_settings(s: SubtitlerSettings):
             for f in _files:
                 if f["status"] == "queued":
                     f["output_path"] = _unique_output_path(f["input_path"], s.output_dir)
+    _save_settings()
     return {"ok": True}
 
 
