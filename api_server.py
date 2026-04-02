@@ -328,6 +328,48 @@ async def browse_output_dir():
         raise HTTPException(500, f"Directory dialog failed: {e}")
 
 
+# ─── Session log files ────────────────────────────────────────────────────────
+
+@app.get("/session-logs/list")
+def list_session_logs(dir: str = ""):
+    """List .txt log files in the output directory, newest first."""
+    target = dir.strip() or _settings.get("output_dir", "")
+    if not target or not os.path.isdir(target):
+        return {"files": [], "dir": target}
+    try:
+        files = []
+        for name in os.listdir(target):
+            if not name.endswith(".txt"):
+                continue
+            full = os.path.join(target, name)
+            if not os.path.isfile(full):
+                continue
+            stat = os.stat(full)
+            files.append({
+                "name": name,
+                "path": full,
+                "modified": stat.st_mtime,
+                "size": stat.st_size,
+            })
+        files.sort(key=lambda x: x["modified"], reverse=True)
+        return {"files": files, "dir": target}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/session-logs/read")
+def read_session_log(path: str = ""):
+    """Return the full text content of a specific log file."""
+    if not path or not os.path.isfile(path):
+        raise HTTPException(404, "File not found")
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+        return {"name": os.path.basename(path), "content": content}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
 # ─── Processing ───────────────────────────────────────────────────────────────
 
 @app.post("/process/start")
