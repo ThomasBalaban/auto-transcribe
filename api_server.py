@@ -1,0 +1,342 @@
+"""
+SimpleAutoSubs Headless API Server
+REST API for the Hub to control video processing without the GUI.
+Port: 8020
+"""
+import os
+import sys
+import threading
+import time
+from collections import deque
+from contextlib import asynccontextmanager
+from typing import Any, Dict, List, Optional
+
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+# Ensure SimpleAutoSubs root is importable
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+PORT = 8020
+
+# ─── Shared state ─────────────────────────────────────────────────────────────
+
+_files: List[Dict[str, Any]] = []
+_settings: Dict[str, Any] = {
+    "animation_type": "Auto",
+    "sync_offset": -0.15,
+    "output_dir": os.path.join(os.path.expanduser("~"), "Desktop"),
+    "enable_trimming": True,
+}
+_logs: deque = deque(maxlen=500)
+_processing = False
+_stop_requested = False
+_current_index = -1
+_lock = threading.Lock()
+
+
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def _log(msg: str) -> None:
+    line = f"[{time.strftime('%H:%M:%S')}] {msg}"
+    _logs.append(line)
+    print(line, flush=True)
+
+
+def _unique_output_path(input_path: str, output_dir: str) -> str:
+    name = os.path.splitext(os.path.basename(input_path))[0]
+    base = os.path.join(output_dir, f"{name}-as.mp4")
+    if not os.path.exists(base):
+        return base
+    i = 1
+    while os.path.exists(os.path.join(output_dir, f"{name}-as-{i}.mp4")):
+        i += 1
+    return os.path.join(output_dir, f"{name}-as-{i}.mp4")
+
+
+def _processing_worker() -> None:
+    global _processing, _stop_requested, _current_index
+
+    # Lazy import keeps server startup fast
+    try:
+        from core.video_processor import VideoProcessor
+    except Exception as e:
+        _log(f"❌ Failed to import VideoProcessor: {e}")
+        import traceback
+        _log(traceback.format_exc())
+        _processing = False
+        return
+
+    queued_indices = [i for i, f in enumerate(_files) if f["status"] == "queued"]
+    _log(f"=== Batch started: {len(queued_indices)} queued file(s) ===")
+
+    for idx in queued_indices:
+        if _stop_requested:
+            _log("⏹  Stop requested — halting batch.")
+            break
+
+        with _lock:
+            _current_index = idx
+            _files[idx]["status"] = "processing"
+
+        entry = _files[idx]
+        _log(f"\n{'='*40}")
+        _log(f"Processing {idx + 1}/{len(_files)}: {os.path.basename(entry['input_path'])}")
+        _log(f"{'='*40}")
+
+        try:
+            final_path, title, _ = VideoProcessor.process_single_video(
+                input_file=entry["input_path"],
+                output_file=entry["output_path"],
+                animation_type=_settings["animation_type"],
+                sync_offset=_settings["sync_offset"],
+                detailed_logs=True,
+                log_func=_log,
+                enable_trimming=_settings["enable_trimming"],
+            )
+            with _lock:
+                _files[idx]["output_path"] = final_path or entry["output_path"]
+                _files[idx]["title"] = title or ""
+                _files[idx]["status"] = "done"
+            _log(f"✅ Done: {os.path.basename(_files[idx]['output_path'])}")
+
+        except Exception as e:
+            import traceback
+            err = str(e)
+            with _lock:
+                _files[idx]["status"] = "error"
+                _files[idx]["error"] = err
+            _log(f"❌ Error on {os.path.basename(entry['input_path'])}: {err}")
+            _log(traceback.format_exc())
+
+    with _lock:
+        _processing = False
+        _current_index = -1
+    _log("=== Batch complete ===")
+
+
+# ─── Pydantic models ──────────────────────────────────────────────────────────
+
+class SubtitlerSettings(BaseModel):
+    animation_type: str
+    sync_offset: float
+    output_dir: str
+    enable_trimming: bool
+
+
+class FilesPayload(BaseModel):
+    paths: List[str]
+
+
+# ─── App lifecycle ────────────────────────────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _log(f"✅ SimpleAutoSubs API ready on :{PORT}")
+    yield
+    _log("SimpleAutoSubs API stopping.")
+
+
+app = FastAPI(title="SimpleAutoSubs API", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ─── Health ───────────────────────────────────────────────────────────────────
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "port": PORT}
+
+
+# ─── Files ────────────────────────────────────────────────────────────────────
+
+@app.get("/files")
+def get_files():
+    return list(_files)
+
+
+@app.post("/files")
+def add_files(payload: FilesPayload):
+    output_dir = _settings["output_dir"]
+    os.makedirs(output_dir, exist_ok=True)
+    existing = {f["input_path"] for f in _files}
+    added = 0
+    for raw in payload.paths:
+        path = raw.strip()
+        if not path:
+            continue
+        if not os.path.exists(path):
+            _log(f"⚠️  Skipping missing file: {path}")
+            continue
+        if path in existing:
+            continue
+        with _lock:
+            _files.append({
+                "input_path": path,
+                "output_path": _unique_output_path(path, output_dir),
+                "status": "queued",
+                "title": "",
+                "error": "",
+            })
+        existing.add(path)
+        added += 1
+    return {"ok": True, "added": added, "total": len(_files)}
+
+
+@app.delete("/files/{index}")
+def remove_file(index: int):
+    if _processing:
+        raise HTTPException(400, "Cannot remove files while processing")
+    if index < 0 or index >= len(_files):
+        raise HTTPException(404, "Index out of range")
+    with _lock:
+        _files.pop(index)
+    return {"ok": True, "total": len(_files)}
+
+
+@app.delete("/files")
+def clear_files():
+    global _files
+    if _processing:
+        raise HTTPException(400, "Cannot clear while processing")
+    with _lock:
+        _files.clear()
+    return {"ok": True}
+
+
+@app.post("/files/reset")
+def reset_files():
+    """Set all done/error files back to queued."""
+    if _processing:
+        raise HTTPException(400, "Cannot reset while processing")
+    with _lock:
+        for f in _files:
+            if f["status"] in ("done", "error"):
+                f["status"] = "queued"
+                f["error"] = ""
+                f["title"] = ""
+    return {"ok": True}
+
+
+@app.get("/files/browse")
+def browse_files():
+    """Open a native file dialog and return selected paths."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.wm_attributes("-topmost", True)
+        paths = filedialog.askopenfilenames(
+            title="Select Video Files",
+            filetypes=[("Video files", "*.mp4 *.mkv *.avi"), ("All files", "*.*")],
+        )
+        root.destroy()
+        return {"paths": list(paths)}
+    except Exception as e:
+        raise HTTPException(500, f"File dialog failed: {e}")
+
+
+# ─── Settings ─────────────────────────────────────────────────────────────────
+
+@app.get("/settings")
+def get_settings():
+    return dict(_settings)
+
+
+@app.post("/settings")
+def post_settings(s: SubtitlerSettings):
+    dir_changed = s.output_dir != _settings["output_dir"]
+    _settings.update({
+        "animation_type": s.animation_type,
+        "sync_offset": round(s.sync_offset, 3),
+        "output_dir": s.output_dir,
+        "enable_trimming": s.enable_trimming,
+    })
+    if dir_changed:
+        os.makedirs(s.output_dir, exist_ok=True)
+        with _lock:
+            for f in _files:
+                if f["status"] == "queued":
+                    f["output_path"] = _unique_output_path(f["input_path"], s.output_dir)
+    return {"ok": True}
+
+
+@app.get("/settings/browse-dir")
+def browse_output_dir():
+    """Open a native folder dialog and return the chosen path."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.wm_attributes("-topmost", True)
+        path = filedialog.askdirectory(title="Select Output Directory")
+        root.destroy()
+        return {"path": path or ""}
+    except Exception as e:
+        raise HTTPException(500, f"Directory dialog failed: {e}")
+
+
+# ─── Processing ───────────────────────────────────────────────────────────────
+
+@app.post("/process/start")
+def start_processing():
+    global _processing, _stop_requested
+    if _processing:
+        return {"ok": False, "reason": "already_running"}
+    queued = [f for f in _files if f["status"] == "queued"]
+    if not queued:
+        return {"ok": False, "reason": "no_queued_files"}
+    _stop_requested = False
+    _processing = True
+    threading.Thread(target=_processing_worker, daemon=True).start()
+    return {"ok": True}
+
+
+@app.post("/process/stop")
+def stop_processing():
+    global _stop_requested
+    _stop_requested = True
+    return {"ok": True, "message": "Stop requested — will halt after current file."}
+
+
+@app.get("/process/status")
+def process_status():
+    return {
+        "processing": _processing,
+        "stop_requested": _stop_requested,
+        "current_index": _current_index,
+        "total": len(_files),
+        "queued": sum(1 for f in _files if f["status"] == "queued"),
+        "done": sum(1 for f in _files if f["status"] == "done"),
+        "errors": sum(1 for f in _files if f["status"] == "error"),
+    }
+
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+
+@app.get("/logs")
+def get_logs(last: int = 200):
+    return {"lines": list(_logs)[-last:]}
+
+
+@app.delete("/logs")
+def clear_logs():
+    _logs.clear()
+    return {"ok": True}
+
+
+# ─── Entry ────────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
