@@ -228,20 +228,46 @@ def reset_files():
 
 
 @app.get("/files/browse")
-def browse_files():
-    """Open a native file dialog and return selected paths."""
+async def browse_files():
+    """Open a native file picker. Uses osascript on macOS (no main-thread requirement)."""
+    import asyncio
+
+    def _dialog():
+        if sys.platform == "darwin":
+            import subprocess
+            # Use AppleScript — runs as a subprocess, no main-thread restriction
+            script = (
+                "set theFiles to choose file "
+                'of type {"mp4", "mkv", "avi"} '
+                "with multiple selections allowed "
+                'with prompt "Select Video Files"\n'
+                "set out to \"\"\n"
+                "repeat with f in theFiles\n"
+                "    set out to out & POSIX path of f & (ASCII character 10)\n"
+                "end repeat\n"
+                "return out"
+            )
+            r = subprocess.run(["osascript", "-e", script],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                return []  # user cancelled
+            return [p for p in r.stdout.strip().splitlines() if p.strip()]
+        else:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            root.wm_attributes("-topmost", True)
+            paths = filedialog.askopenfilenames(
+                title="Select Video Files",
+                filetypes=[("Video files", "*.mp4 *.mkv *.avi")],
+            )
+            root.destroy()
+            return list(paths)
+
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-        root = tk.Tk()
-        root.withdraw()
-        root.wm_attributes("-topmost", True)
-        paths = filedialog.askopenfilenames(
-            title="Select Video Files",
-            filetypes=[("Video files", "*.mp4 *.mkv *.avi"), ("All files", "*.*")],
-        )
-        root.destroy()
-        return {"paths": list(paths)}
+        paths = await asyncio.get_event_loop().run_in_executor(None, _dialog)
+        return {"paths": paths}
     except Exception as e:
         raise HTTPException(500, f"File dialog failed: {e}")
 
@@ -272,17 +298,32 @@ def post_settings(s: SubtitlerSettings):
 
 
 @app.get("/settings/browse-dir")
-def browse_output_dir():
-    """Open a native folder dialog and return the chosen path."""
+async def browse_output_dir():
+    """Open a native folder picker. Uses osascript on macOS."""
+    import asyncio
+
+    def _dialog():
+        if sys.platform == "darwin":
+            import subprocess
+            script = 'POSIX path of (choose folder with prompt "Select Output Directory")'
+            r = subprocess.run(["osascript", "-e", script],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                return ""  # user cancelled
+            return r.stdout.strip().rstrip("/")
+        else:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            root.wm_attributes("-topmost", True)
+            path = filedialog.askdirectory(title="Select Output Directory")
+            root.destroy()
+            return path or ""
+
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-        root = tk.Tk()
-        root.withdraw()
-        root.wm_attributes("-topmost", True)
-        path = filedialog.askdirectory(title="Select Output Directory")
-        root.destroy()
-        return {"path": path or ""}
+        path = await asyncio.get_event_loop().run_in_executor(None, _dialog)
+        return {"path": path}
     except Exception as e:
         raise HTTPException(500, f"Directory dialog failed: {e}")
 
