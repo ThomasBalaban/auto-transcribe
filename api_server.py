@@ -21,7 +21,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
-PORT = 8020
+PORT = 9020
 # Same file the hub launcher reads/writes — single source of truth
 SETTINGS_FILE = os.path.join(_HERE, "..", "youtube_hub", "hub_settings.json")
 
