@@ -8,5 +8,4 @@ local_modals/*
 output/*
 config.json
 window_geometry.json
-shorts_analysis.json
-shorts_data/shorts_metadata_**.json
+shorts_data/shorts_metadata_1.json

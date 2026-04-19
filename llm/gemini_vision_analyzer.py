@@ -35,7 +35,6 @@ class GeminiVisionAnalyzer:
         self.log_func(f"🎬 Gemini Vision analyzer initialized: {MODEL_FLASH}")
 
     # ── Convenience — kept for the title-less pipeline's back-compat usage ──
-    # (title_generator used to call this; we keep the helper in case other
     #  modules still want raw frames.)
     def extract_frames_from_video(
         self,
