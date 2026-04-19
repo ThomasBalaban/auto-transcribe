@@ -1,7 +1,7 @@
 """
 SimpleAutoSubs Headless API Server
 REST API for the Hub to control video processing without the GUI.
-Port: 8020
+Port: 9020
 """
 import os
 import sys
@@ -9,20 +9,18 @@ import threading
 import time
 from collections import deque
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Ensure SimpleAutoSubs root is importable
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 PORT = 9020
-# Same file the hub launcher reads/writes — single source of truth
 SETTINGS_FILE = os.path.join(_HERE, "..", "youtube_hub", "hub_settings.json")
 
 # ─── Shared state ─────────────────────────────────────────────────────────────
@@ -42,14 +40,12 @@ _lock = threading.Lock()
 
 
 def _load_settings() -> None:
-    """Load persisted settings from hub_settings.json if it exists."""
     if not os.path.exists(SETTINGS_FILE):
         return
     try:
         import json
         with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
             saved = json.load(f)
-        # Only restore keys that are still valid settings
         for k in _settings:
             if k in saved:
                 _settings[k] = saved[k]
@@ -59,7 +55,6 @@ def _load_settings() -> None:
 
 
 def _save_settings() -> None:
-    """Persist current settings to hub_settings.json."""
     try:
         import json
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
@@ -93,7 +88,6 @@ def _unique_output_path(input_path: str, output_dir: str) -> str:
 def _processing_worker() -> None:
     global _processing, _stop_requested, _current_index
 
-    # Lazy import keeps server startup fast
     try:
         from core.video_processor import VideoProcessor
     except Exception as e:
@@ -103,7 +97,9 @@ def _processing_worker() -> None:
         _processing = False
         return
 
-    queued_indices = [i for i, f in enumerate(_files) if f["status"] == "queued"]
+    queued_indices = [
+        i for i, f in enumerate(_files) if f["status"] == "queued"
+    ]
     _log(f"=== Batch started: {len(queued_indices)} queued file(s) ===")
 
     for idx in queued_indices:
@@ -117,11 +113,14 @@ def _processing_worker() -> None:
 
         entry = _files[idx]
         _log(f"\n{'='*40}")
-        _log(f"Processing {idx + 1}/{len(_files)}: {os.path.basename(entry['input_path'])}")
+        _log(
+            f"Processing {idx + 1}/{len(_files)}: "
+            f"{os.path.basename(entry['input_path'])}"
+        )
         _log(f"{'='*40}")
 
         try:
-            final_path, title, _ = VideoProcessor.process_single_video(
+            final_path, _title, _meta = VideoProcessor.process_single_video(
                 input_file=entry["input_path"],
                 output_file=entry["output_path"],
                 animation_type=_settings["animation_type"],
@@ -131,10 +130,13 @@ def _processing_worker() -> None:
                 enable_trimming=_settings["enable_trimming"],
             )
             with _lock:
-                _files[idx]["output_path"] = final_path or entry["output_path"]
-                _files[idx]["title"] = title or ""
+                _files[idx]["output_path"] = (
+                    final_path or entry["output_path"])
                 _files[idx]["status"] = "done"
-            _log(f"✅ Done: {os.path.basename(_files[idx]['output_path'])}")
+            _log(
+                f"✅ Done: "
+                f"{os.path.basename(_files[idx]['output_path'])}"
+            )
 
         except Exception as e:
             import traceback
@@ -142,7 +144,10 @@ def _processing_worker() -> None:
             with _lock:
                 _files[idx]["status"] = "error"
                 _files[idx]["error"] = err
-            _log(f"❌ Error on {os.path.basename(entry['input_path'])}: {err}")
+            _log(
+                f"❌ Error on "
+                f"{os.path.basename(entry['input_path'])}: {err}"
+            )
             _log(traceback.format_exc())
 
     with _lock:
@@ -216,7 +221,6 @@ def add_files(payload: FilesPayload):
                 "input_path": path,
                 "output_path": _unique_output_path(path, output_dir),
                 "status": "queued",
-                "title": "",
                 "error": "",
             })
         existing.add(path)
@@ -255,19 +259,16 @@ def reset_files():
             if f["status"] in ("done", "error"):
                 f["status"] = "queued"
                 f["error"] = ""
-                f["title"] = ""
     return {"ok": True}
 
 
 @app.get("/files/browse")
 async def browse_files():
-    """Open a native file picker. Uses osascript on macOS (no main-thread requirement)."""
     import asyncio
 
     def _dialog():
         if sys.platform == "darwin":
             import subprocess
-            # Use AppleScript — runs as a subprocess, no main-thread restriction
             script = (
                 "set theFiles to choose file "
                 'of type {"mp4", "mkv", "avi"} '
@@ -282,7 +283,7 @@ async def browse_files():
             r = subprocess.run(["osascript", "-e", script],
                                capture_output=True, text=True)
             if r.returncode != 0:
-                return []  # user cancelled
+                return []
             return [p for p in r.stdout.strip().splitlines() if p.strip()]
         else:
             import tkinter as tk
@@ -325,24 +326,27 @@ def post_settings(s: SubtitlerSettings):
         with _lock:
             for f in _files:
                 if f["status"] == "queued":
-                    f["output_path"] = _unique_output_path(f["input_path"], s.output_dir)
+                    f["output_path"] = _unique_output_path(
+                        f["input_path"], s.output_dir)
     _save_settings()
     return {"ok": True}
 
 
 @app.get("/settings/browse-dir")
 async def browse_output_dir():
-    """Open a native folder picker. Uses osascript on macOS."""
     import asyncio
 
     def _dialog():
         if sys.platform == "darwin":
             import subprocess
-            script = 'POSIX path of (choose folder with prompt "Select Output Directory")'
+            script = (
+                'POSIX path of (choose folder with prompt '
+                '"Select Output Directory")'
+            )
             r = subprocess.run(["osascript", "-e", script],
                                capture_output=True, text=True)
             if r.returncode != 0:
-                return ""  # user cancelled
+                return ""
             return r.stdout.strip().rstrip("/")
         else:
             import tkinter as tk
@@ -365,7 +369,6 @@ async def browse_output_dir():
 
 @app.get("/session-logs/list")
 def list_session_logs(dir: str = ""):
-    """List .txt log files in the output directory, newest first."""
     target = dir.strip() or _settings.get("output_dir", "")
     if not target or not os.path.isdir(target):
         return {"files": [], "dir": target}
@@ -392,7 +395,6 @@ def list_session_logs(dir: str = ""):
 
 @app.get("/session-logs/read")
 def read_session_log(path: str = ""):
-    """Return the full text content of a specific log file."""
     if not path or not os.path.isfile(path):
         raise HTTPException(404, "File not found")
     try:
@@ -423,7 +425,10 @@ def start_processing():
 def stop_processing():
     global _stop_requested
     _stop_requested = True
-    return {"ok": True, "message": "Stop requested — will halt after current file."}
+    return {
+        "ok": True,
+        "message": "Stop requested — will halt after current file.",
+    }
 
 
 @app.get("/process/status")

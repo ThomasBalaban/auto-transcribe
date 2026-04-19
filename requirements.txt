@@ -3,7 +3,13 @@ customtkinter
 ffmpeg-python
 numpy
 
-# Speech Recognition
+# Headless API
+fastapi
+uvicorn
+pydantic
+
+# Speech Recognition (primary: OpenAI API, fallbacks: local)
+openai
 faster-whisper
 whisper
 whisperx
@@ -18,7 +24,13 @@ accelerate
 librosa
 opencv-python
 pillow
-google-generativeai
+
+# Google Gen AI SDK (Gemini 3) — requires 1.51.0+ for Gemini 3 features
+google-genai>=1.51.0
+
+# YouTube tooling (used only by analyze_top_shorts.py)
+google-api-python-client
+yt-dlp
 
 # Additional AI Dependencies
 datasets

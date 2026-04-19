@@ -1,16 +1,23 @@
-import google.generativeai as genai # type: ignore
-from utils.config import get_gemini_api_key
+"""Debug: list available Gemini models via the new SDK."""
 
-# Configure with your API key
-api_key = get_gemini_api_key()
-genai.configure(api_key=api_key)
+from utils.models import get_gemini_client
 
-# List all available models
-print("Available models:")
-print("=" * 60)
-for model in genai.list_models():
-    if 'generateContent' in model.supported_generation_methods:
-        print(f"Name: {model.name}")
-        print(f"  Display Name: {model.display_name}")
-        print(f"  Supported methods: {model.supported_generation_methods}")
-        print()
+
+def main():
+    client = get_gemini_client()
+
+    print("Available models:")
+    print("=" * 60)
+    for model in client.models.list():
+        actions = getattr(model, "supported_actions", None) or []
+        if "generateContent" in actions:
+            print(f"Name: {model.name}")
+            display = getattr(model, "display_name", "")
+            if display:
+                print(f"  Display Name: {display}")
+            print(f"  Supported actions: {actions}")
+            print()
+
+
+if __name__ == "__main__":
+    main()
