@@ -29,6 +29,30 @@ from utils.models import (
 # tight — 70 chars is the YouTube short-title display ceiling on mobile.
 MAX_TITLE_CHARS = 70
 
+# Hard-deny list — chosen titles containing any of these (whole-word, case-
+# insensitive) are rejected and the title is dropped. Note: "ass" alone is
+# allowed; only the explicit anatomical/sexual terms below trip the gate.
+# The prompt itself does the heavy lifting (creative euphemism); this is the
+# safety net for when the model ignores instructions.
+_BANNED_PATTERNS: List["re.Pattern[str]"] = [
+    re.compile(r"\bfuck\w*\b", re.IGNORECASE),     # fuck, fucking, fucked, …
+    re.compile(r"\bcum(s|ming|med)?\b", re.IGNORECASE),
+    re.compile(r"\bdicks?\b", re.IGNORECASE),
+    re.compile(r"\bassholes?\b", re.IGNORECASE),
+    re.compile(r"\bpuss(y|ies)\b", re.IGNORECASE),
+    re.compile(r"\bclit\w*\b", re.IGNORECASE),     # clit, clits, clitoris
+    re.compile(r"\bvagina\w*\b", re.IGNORECASE),   # vagina, vaginas, vaginal
+]
+
+
+def _banned_match(title: str) -> Optional[str]:
+    """Return the first banned term matched in the title, or None."""
+    for pat in _BANNED_PATTERNS:
+        m = pat.search(title)
+        if m:
+            return m.group(0)
+    return None
+
 # JSON schema we ask Gemini to fill in. Captured here (not just inline in the
 # prompt) so structured-output validation happens server-side.
 _RESPONSE_SCHEMA: Dict[str, Any] = {
@@ -219,9 +243,18 @@ class TitleGenerator:
             self._log("[title] Gemini response missing chosen_title")
             return None
 
-        # Post-validate: enforce length cap on the server side too. If the
-        # model overshoots, we still take the title but flag it in the analysis
-        # so it shows up when reviewing why the model went long.
+        # Post-validate: hard-deny banned terms (creative substitution is
+        # supposed to happen in the prompt; this is the safety net).
+        banned_hit = _banned_match(chosen)
+        if banned_hit:
+            self._log(
+                f"[title] rejected — chosen title contains banned term "
+                f"'{banned_hit}': \"{chosen}\""
+            )
+            return None
+
+        # Length cap is softer — flag in the analysis but still ship the
+        # title so the operator can decide whether to trim it.
         too_long = len(chosen) > MAX_TITLE_CHARS
 
         analysis = {
@@ -386,6 +419,25 @@ Hard constraints on the title:
 - Snappy, scroll-stopping, mobile-readable.
 - No clickbait deception — the title must be honest about the clip content.
 - Do NOT prepend or append "#shorts" — that's added downstream if needed.
+
+Content policy (these will get the title auto-rejected by the publisher):
+- The word "fuck" (and any inflection: fucking, fucked, etc.) is BANNED.
+  Substitute with creative alternatives that capture the same energy
+  ("freaking", "absolutely cooked", "wrecked", "lost it", etc.) or
+  rewrite the title to drop the intensifier entirely.
+- Explicit sexual anatomy terms are BANNED — including but not limited to
+  "cum", "dick", "asshole", "pussy", "clit", "vagina". The word "ass" by
+  itself is fine in non-sexual contexts (e.g. "got my ass kicked").
+- For any clip content that is suggestive or sexual in nature, get
+  CREATIVE with the language. Invent playful, original euphemisms that
+  fit the moment rather than reaching for the literal anatomical word.
+  Think on the level of a comedian writing a TV-safe punchline. Different
+  clips deserve different invented terms — do not fall back to a stock
+  list. The goal is humor, not censorship; a great euphemism makes the
+  title funnier than the literal word would have.
+- When in doubt, write a title that a YouTube ads-eligible channel would
+  ship. If even your euphemism feels like a near-miss of the banned word,
+  pick a different angle entirely.
 
 # Channel insights — synthesis from the analyzer
 {synthesis_block}
