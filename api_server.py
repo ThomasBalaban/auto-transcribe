@@ -102,6 +102,8 @@ def _processing_worker() -> None:
     ]
     _log(f"=== Batch started: {len(queued_indices)} queued file(s) ===")
 
+    batch_metadata: List[Dict[str, Any]] = []
+
     for idx in queued_indices:
         if _stop_requested:
             _log("⏹  Stop requested — halting batch.")
@@ -120,7 +122,7 @@ def _processing_worker() -> None:
         _log(f"{'='*40}")
 
         try:
-            final_path, _title, _meta = VideoProcessor.process_single_video(
+            final_path, _title, meta = VideoProcessor.process_single_video(
                 input_file=entry["input_path"],
                 output_file=entry["output_path"],
                 animation_type=_settings["animation_type"],
@@ -133,6 +135,9 @@ def _processing_worker() -> None:
                 _files[idx]["output_path"] = (
                     final_path or entry["output_path"])
                 _files[idx]["status"] = "done"
+                _files[idx]["title"] = (meta or {}).get("title", "") or ""
+            if meta:
+                batch_metadata.append(meta)
             _log(
                 f"✅ Done: "
                 f"{os.path.basename(_files[idx]['output_path'])}"
@@ -150,10 +155,36 @@ def _processing_worker() -> None:
             )
             _log(traceback.format_exc())
 
+    if batch_metadata:
+        try:
+            _save_batch_metadata(batch_metadata)
+        except Exception as e:
+            _log(f"⚠️ Failed to save batch metadata: {e}")
+
     with _lock:
         _processing = False
         _current_index = -1
     _log("=== Batch complete ===")
+
+
+def _save_batch_metadata(batch_metadata: List[Dict[str, Any]]) -> None:
+    """Mirror main.py: write the batch's per-video metadata to
+    shorts_data/shorts_metadata_<N>.json with auto-incrementing index."""
+    import json
+    import re
+    shorts_data_dir = os.path.join(_HERE, "shorts_data")
+    os.makedirs(shorts_data_dir, exist_ok=True)
+    max_index = 0
+    for fname in os.listdir(shorts_data_dir):
+        m = re.match(r"shorts_metadata_(\d+)\.json", fname)
+        if m:
+            max_index = max(max_index, int(m.group(1)))
+    next_index = max_index + 1
+    json_path = os.path.join(
+        shorts_data_dir, f"shorts_metadata_{next_index}.json")
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(batch_metadata, f, indent=2, default=str)
+    _log(f"✅ Batch metadata saved to: {json_path}")
 
 
 # ─── Pydantic models ──────────────────────────────────────────────────────────
@@ -222,6 +253,7 @@ def add_files(payload: FilesPayload):
                 "output_path": _unique_output_path(path, output_dir),
                 "status": "queued",
                 "error": "",
+                "title": "",
             })
         existing.add(path)
         added += 1
@@ -455,6 +487,23 @@ def get_logs(last: int = 200):
 def clear_logs():
     _logs.clear()
     return {"ok": True}
+
+
+# ─── Analyzer bridge (shorts_analyzer @ :9021) ───────────────────────────────
+
+from analyzer_client import AnalyzerClient
+
+_analyzer_client = AnalyzerClient(log_func=_log)
+
+
+@app.get("/analyzer/status")
+def analyzer_status():
+    """
+    Bridge health probe. Returns connectivity to the shorts_analyzer API plus
+    what's available for the hardcoded PeepingOtter channel. Safe to poll —
+    never raises, never starts work on the analyzer side.
+    """
+    return _analyzer_client.status_snapshot()
 
 
 # ─── Entry ────────────────────────────────────────────────────────────────────

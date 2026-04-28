@@ -14,6 +14,7 @@ from ai_director.video_editor import VideoEditor
 from video_utils import get_video_duration
 from clip_editor.intelligent_trimmer import IntelligentTrimmer
 from utils.timestamp_processor import extend_segments_for_dialogue
+from title_generator import TitleGenerator
 
 
 class VideoProcessor:
@@ -283,19 +284,40 @@ class VideoProcessor:
             else:
                 shutil.copy2(intermediate_with_subs, output_file)
 
-            # ── PHASE 7: Metadata (no rename, no title) ────────────────
+            # ── PHASE 7: Title generation + metadata ──────────────────
+            log_func("\n--- PHASE 7: Title Generation ---")
+            final_duration_value = (
+                get_video_duration(output_file, log_func)
+                if os.path.exists(output_file) else None
+            )
             video_metadata = {
                 "file_info": {
                     "original_filename": os.path.basename(input_file),
                     "output_filename": os.path.basename(output_file),
                     "processed_at": datetime.datetime.now().isoformat(),
                     "original_duration": video_duration,
-                    "final_duration": (
-                        get_video_duration(output_file, log_func)
-                        if os.path.exists(output_file) else None
-                    ),
+                    "final_duration": final_duration_value,
                 },
             }
+
+            try:
+                title_result = TitleGenerator(log_func=log_func).generate(
+                    mic_transcriptions_raw=mic_transcriptions_raw,
+                    desktop_transcriptions_raw=desktop_transcriptions_raw,
+                    original_duration=video_duration,
+                    final_duration=final_duration_value,
+                    trim_segments=trim_segments,
+                )
+            except Exception as title_err:
+                # Strict no-fallback: any unexpected crash in title gen
+                # is logged, but the cut still ships without a title.
+                log_func(f"[title] unexpected error: {title_err}")
+                title_result = None
+
+            if title_result:
+                video_metadata["title"] = title_result["text"]
+                video_metadata["title_analysis"] = title_result["analysis"]
+                video_metadata["title_provenance"] = title_result["provenance"]
             log_func("✅ Metadata generated (queued for batch file)")
 
         except Exception as e:

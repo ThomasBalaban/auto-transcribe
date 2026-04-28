@@ -1,0 +1,63 @@
+[
+  {
+    "file_info": {
+      "original_filename": "Backtrack 2026-04-14 21-41-28.mkv",
+      "output_filename": "Backtrack 2026-04-14 21-41-28-as-1.mp4",
+      "processed_at": "2026-04-27T23:36:49.967281",
+      "original_duration": 58.65,
+      "final_duration": 19.675326
+    },
+    "title": "\"REST IN PEACE\" - Killed by a rabbit",
+    "title_analysis": {
+      "chosen_title_reasoning": "This title grounds the streamer's chaotic mid-clip screaming by explicitly spoiling the comedic payoff (dying to a rabbit). It avoids the bottom-quintile trap of using vague, all-caps rage quotes (e.g., \"FUCK YOU RABBIT\"), instead using the specific, absurd detail (\"REST IN PEACE\") to set clear expectations. This perfectly mirrors the strategy in \"WHERE DID HE GO - The Mortuary Assistant,\" where a quote pairs with concrete context to anchor the chaos.",
+      "candidates_considered": [
+        {
+          "text": "\"REST IN PEACE\" - Killed by a rabbit",
+          "verdict": "chosen",
+          "reasoning": "Grounds the chaotic reaction by spoiling the payoff while utilizing the most absurd quote from the clip to build a curiosity gap."
+        },
+        {
+          "text": "FUCK YOU RABBIT",
+          "verdict": "rejected",
+          "reasoning": "Relies entirely on `all_caps_intensity` and `genuine_reaction_peak`, which the synthesis explicitly identifies as bottom-quintile anti-patterns when lacking context."
+        },
+        {
+          "text": "Never trust a polite rabbit",
+          "verdict": "rejected",
+          "reasoning": "A bit too vague; misses the opportunity to use the specific 'rest in peace' quote to create a stronger, more specific curiosity gap."
+        },
+        {
+          "text": "\"YOU SAID REST IN PEACE\"",
+          "verdict": "rejected",
+          "reasoning": "Lacks contextual grounding. The channel synthesis notes that `in_medias_res_chaos` needs aggressive contextualization (like naming the killer) to succeed."
+        }
+      ],
+      "patterns_applied": [
+        "title_spoils_payoff \u2014 Explicitly stating he gets killed by a rabbit sets up the joke's premise and expectation immediately.",
+        "quoted_dialogue_title \u2014 Using 'REST IN PEACE' highlights the absurd catalyst for the streamer's rage, acting as a hook."
+      ],
+      "patterns_avoided": [
+        "all_caps_intensity \u2014 Avoided using full all-caps for the entire title to prevent it from feeling like manufactured, unearned excitement.",
+        "genuine_reaction_peak \u2014 Avoided titling solely based on the scream/rage (e.g., 'WHY AM I ALIVE'), as the synthesis shows raw reactions fail without editorial framing."
+      ],
+      "reference_comparisons": [
+        {
+          "reference_title": "WHERE DID HE GO - The Mortuary Assistant",
+          "takeaway": "Borrowed the structure of pairing a capitalized quote with concrete context to ground a chaotic, panic-driven reaction."
+        },
+        {
+          "reference_title": "I REGRET MY CHOICES (Gross)",
+          "takeaway": "Borrowed the concept of setting a clear expectation for a punishment/payoff so the viewer knows exactly why they are watching the streamer scream."
+        }
+      ]
+    },
+    "title_provenance": {
+      "model": "gemini-3.1-pro-preview",
+      "generated_at": "2026-04-27T23:37:22.118152",
+      "channel_handle": "PeepingOtter",
+      "synthesis_total_shorts": 5,
+      "synthesis_small_corpus_warning": true,
+      "synthesis_generated_at": "2026-04-27T15:34:13.514186"
+    }
+  }
+]
