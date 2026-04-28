@@ -7,7 +7,10 @@
       "Bash(node_modules/.bin/ng build *)",
       "Bash(curl -sS -m 2 http://localhost:9021/health)",
       "Bash(curl -sS -m 2 http://127.0.0.1:9021/health)",
-      "Bash(lsof -nP -iTCP:9021 -sTCP:LISTEN)"
+      "Bash(lsof -nP -iTCP:9021 -sTCP:LISTEN)",
+      "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/thomasbalaban/Downloads/projects/shorts_analyzer/output/PeepingOtter.context.json'\\)\\); print\\(json.dumps\\(d, indent=2\\)[:3000]\\)\")",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/Users/thomasbalaban/Downloads/projects/SimpleAutoSubs/title_generator.py'\\).read\\(\\)\\); print\\('OK'\\)\")"
     ]
   }
 }
